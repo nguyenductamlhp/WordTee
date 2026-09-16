@@ -1,4 +1,4 @@
-/* Landing page for the Tap Counter demo. Dark only, matching the app itself. */
+/* Landing page for the WordTee demo. Dark only, matching the app itself. */
 
 :root {
     --bg: #0b1017;
@@ -129,7 +129,7 @@ section h2 {
 }
 
 /* eframe observes the canvas' CSS box and sets the backing resolution itself. */
-#tap-counter-canvas {
+#wordtee-canvas {
     display: block;
     width: 100%;
     height: 100%;

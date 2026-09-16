@@ -1,4 +1,4 @@
-# Trunk builds the wasm32 version of the `tap-counter` binary and assembles
+# Trunk builds the wasm32 version of the `wordtee-app` binary and assembles
 # `dist/` from web/index.html. See https://trunkrs.dev
 [build]
 target = "web/index.html"

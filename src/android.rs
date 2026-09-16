@@ -1,6 +1,6 @@
 //! Android entry point.
 
-use crate::{APP_NAME, TapCounterApp, native_options};
+use crate::{APP_NAME, WordTeeApp, native_options};
 use android_activity::{AndroidApp, WindowManagerFlags};
 
 /// `android-activity` spawns a dedicated thread and calls this unmangled
@@ -10,7 +10,7 @@ fn android_main(app: AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default()
             .with_max_level(log::LevelFilter::Info)
-            .with_tag("tcheckee"),
+            .with_tag("wordtee"),
     );
 
     // Draw behind the status/navigation bars so the whole screen is tappable.
@@ -22,7 +22,7 @@ fn android_main(app: AndroidApp) {
     if let Err(err) = eframe::run_native(
         APP_NAME,
         options,
-        Box::new(|cc| Ok(Box::new(TapCounterApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(WordTeeApp::new(cc)))),
     ) {
         log::error!("eframe exited with an error: {err}");
     }

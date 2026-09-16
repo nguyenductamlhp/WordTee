@@ -14,12 +14,12 @@
 # Run it locally
 # --------------
 #   docker compose build
-#   docker run --rm -p 8080:80 tap-counter-web      # http://localhost:8080
+#   docker run --rm -p 8080:80 wordtee-web          # http://localhost:8080
 #
 # and to pull the APK out of the image:
 #
-#   docker run --rm -v "$PWD/out:/out" tap-counter-web \
-#       cp /usr/share/nginx/html/download/tap-counter.apk /out/
+#   docker run --rm -v "$PWD/out:/out" wordtee-web \
+#       cp /usr/share/nginx/html/download/wordtee.apk /out/
 #
 # There is deliberately no `ports:` below. Coolify's proxy reaches the container
 # over the Docker network, so publishing a host port would bypass it — and
@@ -32,7 +32,7 @@
 # and 4 GB of RAM, and expect the first build to take a while. What ends up
 # running afterwards is only nginx plus ~7 MB of static files.
 
-name: tap-counter
+name: wordtee
 
 services:
   web:

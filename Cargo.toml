@@ -1,5 +1,5 @@
 [package]
-name = "tcheckee"
+name = "wordtee"
 version = "0.1.0"
 edition = "2024"
 description = "Tap the screen to increase a counter - an egui app for desktop and Android"
@@ -10,13 +10,13 @@ publish = false
 # `lib` for the binary to link against, `cdylib` for the Android NativeActivity
 # to `dlopen`. The lib name decides the `.so` name, which Android looks up via
 # the `android.app.lib_name` manifest entry below.
-name = "tcheckee"
+name = "wordtee"
 crate-type = ["lib", "cdylib"]
 
 [[bin]]
-# Deliberately not called `tcheckee`: on wasm32 a same-named bin and cdylib
-# would both want to produce `tcheckee.wasm`.
-name = "tap-counter"
+# Deliberately not called `wordtee`: on wasm32 a same-named bin and cdylib
+# would both want to produce `wordtee.wasm`.
+name = "wordtee-app"
 path = "src/main.rs"
 
 [dependencies]
@@ -64,8 +64,8 @@ strip = true
 # README for the full build instructions.
 # ---------------------------------------------------------------------------
 [package.metadata.android]
-package = "com.example.tcheckee"
-apk_name = "tap-counter"
+package = "com.example.wordtee"
+apk_name = "wordtee"
 use_aapt2 = true
 resources = "android/res"
 build_targets = ["aarch64-linux-android", "armv7-linux-androideabi", "x86_64-linux-android"]
@@ -79,7 +79,7 @@ min_sdk_version = 24
 target_sdk_version = 35
 
 [package.metadata.android.application]
-label = "Tap Counter"
+label = "WordTee"
 icon = "@mipmap/ic_launcher"
 theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
 
@@ -90,9 +90,9 @@ launch_mode = "singleTop"
 exported = true
 
 [[package.metadata.android.application.activity.meta_data]]
-# Selects `libtcheckee.so` from the APK's `lib/<abi>/` directory.
+# Selects `libwordtee.so` from the APK's `lib/<abi>/` directory.
 name = "android.app.lib_name"
-value = "tcheckee"
+value = "wordtee"
 
 [[package.metadata.android.application.activity.intent_filter]]
 actions = ["android.intent.action.MAIN"]

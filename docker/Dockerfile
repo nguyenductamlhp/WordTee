@@ -1,7 +1,7 @@
 # Builds the Android APK and the WebAssembly demo, then serves both from nginx.
 #
 #   docker compose build                         builds everything
-#   docker run --rm -p 8080:80 tap-counter-web    →  http://localhost:8080
+#   docker run --rm -p 8080:80 wordtee-web        →  http://localhost:8080
 #
 # The Android SDK/NDK and the Rust toolchains live only in the build stages. The
 # image that actually ships is nginx plus static files, so it stays small.

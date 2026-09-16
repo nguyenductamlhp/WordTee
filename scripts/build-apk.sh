@@ -50,7 +50,7 @@ if [ "$PROFILE" = release ]; then
     # are reproducibly signed; it is gitignored.
     if [ -z "${CARGO_APK_RELEASE_KEYSTORE:-}" ]; then
         export CARGO_APK_RELEASE_KEYSTORE="$PWD/android/keystore/release.jks"
-        export CARGO_APK_RELEASE_KEYSTORE_PASSWORD="${TCHECKEE_KEYSTORE_PASSWORD:-android}"
+        export CARGO_APK_RELEASE_KEYSTORE_PASSWORD="${WORDTEE_KEYSTORE_PASSWORD:-android}"
 
         if [ ! -f "$CARGO_APK_RELEASE_KEYSTORE" ]; then
             echo "Creating a local release keystore at $CARGO_APK_RELEASE_KEYSTORE"
@@ -61,9 +61,9 @@ if [ "$PROFILE" = release ]; then
                 -keystore "$CARGO_APK_RELEASE_KEYSTORE" \
                 -storepass "$CARGO_APK_RELEASE_KEYSTORE_PASSWORD" \
                 -keypass "$CARGO_APK_RELEASE_KEYSTORE_PASSWORD" \
-                -alias tcheckee \
+                -alias wordtee \
                 -keyalg RSA -keysize 2048 -validity 10000 \
-                -dname "CN=tcheckee, OU=Dev, O=Example, L=, S=, C=" >/dev/null
+                -dname "CN=wordtee, OU=Dev, O=Example, L=, S=, C=" >/dev/null
         fi
     fi
 fi
@@ -86,5 +86,5 @@ fi
 if [ "$INSTALL" = 1 ]; then
     echo "Installing onto the connected device..."
     adb install -r "$APK"
-    adb shell monkey -p com.example.tcheckee -c android.intent.category.LAUNCHER 1 >/dev/null
+    adb shell monkey -p com.example.wordtee -c android.intent.category.LAUNCHER 1 >/dev/null
 fi

@@ -1,4 +1,4 @@
-# Tap Counter
+# WordTee
 
 A tiny [egui](https://github.com/emilk/egui) app: tap (or click) anywhere on the
 screen and the counter goes up. The same Rust code runs as a native desktop
@@ -6,7 +6,7 @@ binary, as an installable Android APK, and as WebAssembly in a browser.
 
 ```
 ┌──────────────────────────────┐
-│ Tap Counter    7 taps [Reset]│
+│ WordTee        7 taps [Reset]│
 ├──────────────────────────────┤
 │                              │
 │             ╭───╮            │
@@ -32,7 +32,7 @@ it just built:
 
 ```
 ┌───────────────────────────────────────────────────┐
-│  ⬤ Tap Counter                                    │
+│  ⬤ WordTee                                        │
 │                                                   │
 │   ┌─────────────┐    Install on Android           │
 │   │  ╭───────╮  │    ┌───────────────────────┐    │
@@ -54,16 +54,16 @@ it deliberately publishes no host port: Coolify's proxy reaches the container
 over the Docker network. Locally, publish one yourself:
 
 ```sh
-docker compose build                            # → image tap-counter-web
-docker run --rm -p 8080:80 tap-counter-web      # → http://localhost:8080
+docker compose build                            # → image wordtee-web
+docker run --rm -p 8080:80 wordtee-web          # → http://localhost:8080
 ```
 
 | Command | Effect |
 | --- | --- |
 | `docker compose build` | Build the APK, the wasm bundle and the image |
 | `APK_ABI=all docker compose build` | …with an APK for all three ABIs |
-| `docker run --rm -p 8080:80 tap-counter-web` | Serve it on `localhost:8080` |
-| `docker run --rm -v "$PWD/out:/out" tap-counter-web cp /usr/share/nginx/html/download/tap-counter.apk /out/` | Copy the APK onto the host |
+| `docker run --rm -p 8080:80 wordtee-web` | Serve it on `localhost:8080` |
+| `docker run --rm -v "$PWD/out:/out" wordtee-web cp /usr/share/nginx/html/download/wordtee.apk /out/` | Copy the APK onto the host |
 
 **Expect the first build to take a while**: it downloads the Android SDK and NDK
 (~2.4 GB) and compiles egui twice, once for Android and once for WebAssembly.
@@ -146,7 +146,7 @@ the better shape — ask and I can add that.
   against some Coolify betas ([#6002](https://github.com/coollabsio/coolify/issues/6002)).
 - **Site loads but the APK button says "APK not available"** — the Android stage
   produced nothing. The container's `/usr/share/nginx/html/download/` should
-  hold `tap-counter.apk` and `build-info.json`; the healthcheck fails too in
+  hold `wordtee.apk` and `build-info.json`; the healthcheck fails too in
   that case, so Coolify will mark the service unhealthy.
 - **Build times out** — raise the deployment timeout in Coolify, or set
   `APK_ABI=arm64` (the default) rather than `all`.
@@ -155,7 +155,7 @@ the better shape — ask and I can add that.
 
 | Path | What it is |
 | --- | --- |
-| `src/app.rs` | The app itself — `TapCounterApp` — plus its tests |
+| `src/app.rs` | The app itself — `WordTeeApp` — plus its tests |
 | `src/main.rs` | `main`, for desktop and (compiled to wasm) for the browser |
 | `src/android.rs` | `android_main`, the entry point Android calls |
 | `src/web.rs` | Boots the app into a `<canvas>` |
@@ -170,7 +170,7 @@ the better shape — ask and I can add that.
 
 The Android packaging is configured under `[package.metadata.android]` in
 `Cargo.toml` — there is no Gradle project and no Java or Kotlin source. The APK
-uses Android's built-in `NativeActivity`, which loads `libtcheckee.so` and calls
+uses Android's built-in `NativeActivity`, which loads `libwordtee.so` and calls
 `android_main`.
 
 ## Desktop
@@ -210,7 +210,7 @@ script will reuse them, only filling in what is missing.
 ./scripts/build-apk.sh --release --out ./out  # ...and copy it somewhere
 ```
 
-The APK lands in `target/release/apk/tap-counter.apk` (or `target/debug/apk/…`).
+The APK lands in `target/release/apk/wordtee.apk` (or `target/debug/apk/…`).
 Copy it to a phone and open it, or use `adb install -r <path>`.
 
 `--abi` takes `arm64`, `arm`, `x86_64` or `all`. Real phones are `arm64`;
@@ -227,7 +227,7 @@ immediately. **Before publishing anywhere, make your own keystore and back it
 up** — an app store ties your app's identity to that key forever:
 
 ```sh
-keytool -genkeypair -v -keystore ~/my-release.jks -alias tapcounter \
+keytool -genkeypair -v -keystore ~/my-release.jks -alias wordtee \
         -keyalg RSA -keysize 2048 -validity 10000
 
 export CARGO_APK_RELEASE_KEYSTORE=~/my-release.jks
@@ -240,13 +240,13 @@ export CARGO_APK_RELEASE_KEYSTORE_PASSWORD=...
 ### Changing app identity
 
 Everything lives in `[package.metadata.android]` in `Cargo.toml`:
-`package` (`com.example.tcheckee`), `label`, `apk_name`, `min_sdk_version` /
+`package` (`com.example.wordtee`), `label`, `apk_name`, `min_sdk_version` /
 `target_sdk_version`, and the ABI list in `build_targets`.
 
 ### Logs from a device
 
 ```sh
-adb logcat -s tcheckee:V RustStdoutStderr:V
+adb logcat -s wordtee:V RustStdoutStderr:V
 ```
 
 ## Web
@@ -268,7 +268,7 @@ trunk build --release         # → dist/
 
 ```sh
 ./scripts/build-apk.sh --release --abi arm64 --out dist/download
-./scripts/apk-info.sh dist/download/tap-counter.apk > dist/download/build-info.json
+./scripts/apk-info.sh dist/download/wordtee.apk > dist/download/build-info.json
 ```
 
 ## Notes
