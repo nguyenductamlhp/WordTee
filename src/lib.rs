@@ -1,4 +1,4 @@
-//! `tcheckee` — tap anywhere on the screen to bump a counter.
+//! `wordtee` — tap anywhere on the screen to bump a counter.
 //!
 //! One app, three entry points:
 //!
@@ -10,7 +10,7 @@
 
 mod app;
 
-pub use app::{APP_NAME, TapCounterApp};
+pub use app::{APP_NAME, WordTeeApp};
 
 #[cfg(target_os = "android")]
 mod android;

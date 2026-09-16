@@ -4,7 +4,7 @@
 use eframe::egui;
 
 /// Window title on desktop, launcher label on Android.
-pub const APP_NAME: &str = "Tap Counter";
+pub const APP_NAME: &str = "WordTee";
 
 /// Accent colour used for the counter and the tap ripples.
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(0x4d, 0xb6, 0xf5);
@@ -25,14 +25,14 @@ struct Ripple {
 
 /// Counts taps, and nothing else.
 #[derive(Default)]
-pub struct TapCounterApp {
+pub struct WordTeeApp {
     count: u64,
     ripples: Vec<Ripple>,
     /// Time of the most recent tap, used for the counter "pop" animation.
     last_tap: Option<f64>,
 }
 
-impl TapCounterApp {
+impl WordTeeApp {
     /// Builds the app and applies the shared look-and-feel.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         Self::configure_style(&cc.egui_ctx);
@@ -200,7 +200,7 @@ impl TapCounterApp {
     }
 }
 
-impl eframe::App for TapCounterApp {
+impl eframe::App for WordTeeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.show(ui);
     }
@@ -218,20 +218,20 @@ mod tests {
 
     const SCREEN: Vec2 = Vec2::new(400.0, 800.0);
 
-    /// Drives [`TapCounterApp`] frame by frame without a window or a GPU.
+    /// Drives [`WordTeeApp`] frame by frame without a window or a GPU.
     struct Harness {
         ctx: egui::Context,
-        app: TapCounterApp,
+        app: WordTeeApp,
         time: f64,
     }
 
     impl Harness {
         fn new() -> Self {
             let ctx = egui::Context::default();
-            TapCounterApp::configure_style(&ctx);
+            WordTeeApp::configure_style(&ctx);
             let mut harness = Self {
                 ctx,
-                app: TapCounterApp::default(),
+                app: WordTeeApp::default(),
                 time: 0.0,
             };
             harness.frame(vec![]); // Warm-up pass, so widget rects exist.

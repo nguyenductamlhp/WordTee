@@ -1,12 +1,12 @@
 //! Web entry point: runs the app in a `<canvas>` so it can be tried in a
 //! browser without installing anything. See `web/index.html`.
 
-use crate::TapCounterApp;
+use crate::WordTeeApp;
 use eframe::wasm_bindgen::JsCast as _;
 use eframe::web_sys;
 
 /// `id` of the `<canvas>` the app draws into.
-const CANVAS_ID: &str = "tap-counter-canvas";
+const CANVAS_ID: &str = "wordtee-canvas";
 
 /// `id` of the placeholder shown until the Wasm module has booted.
 const STATUS_ID: &str = "boot-status";
@@ -32,7 +32,7 @@ pub fn start() {
             .start(
                 canvas,
                 eframe::WebOptions::default(),
-                Box::new(|cc| Ok(Box::new(TapCounterApp::new(cc)))),
+                Box::new(|cc| Ok(Box::new(WordTeeApp::new(cc)))),
             )
             .await;
 

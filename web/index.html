@@ -4,13 +4,13 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tap Counter — egui on desktop, Android and the web</title>
+    <title>WordTee — egui on desktop, Android and the web</title>
     <meta name="description"
         content="A tiny egui app: tap the screen and the counter goes up. Try it in the browser, or download the Android APK." />
     <meta name="theme-color" content="#0f1722" />
 
     <link data-trunk rel="css" href="styles.css" />
-    <link data-trunk rel="rust" href="../Cargo.toml" data-bin="tap-counter" data-wasm-opt="z"
+    <link data-trunk rel="rust" href="../Cargo.toml" data-bin="wordtee-app" data-wasm-opt="z"
         data-wasm-opt-params="--enable-bulk-memory-opt --enable-nontrapping-float-to-int" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230f1722'/><circle cx='16' cy='16' r='9' fill='none' stroke='%234db6f5' stroke-width='1.2' opacity='.4'/><circle cx='16' cy='16' r='6' fill='none' stroke='%234db6f5' stroke-width='2'/><circle cx='16' cy='16' r='2.5' fill='%234db6f5'/></svg>" />
 </head>
@@ -23,7 +23,7 @@
             <circle cx="16" cy="16" r="3.5" fill="currentColor" />
         </svg>
         <div>
-            <h1>Tap Counter</h1>
+            <h1>WordTee</h1>
             <p class="tagline">One <a href="https://github.com/emilk/egui">egui</a> app, three targets — desktop,
                 Android, and this page.</p>
         </div>
@@ -36,7 +36,7 @@
             <div class="phone">
                 <div class="phone-bezel">
                     <div class="phone-screen">
-                        <canvas id="tap-counter-canvas"></canvas>
+                        <canvas id="wordtee-canvas"></canvas>
                         <div id="boot-status" class="boot-status">
                             <div class="spinner" aria-hidden="true"></div>
                             <p>Loading WebAssembly…</p>
@@ -51,7 +51,7 @@
         <section class="download" aria-labelledby="download-heading">
             <h2 id="download-heading">Install on Android</h2>
 
-            <a id="apk-link" class="button" href="download/tap-counter.apk" download aria-disabled="true">
+            <a id="apk-link" class="button" href="download/wordtee.apk" download aria-disabled="true">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 3v11m0 0 4.5-4.5M12 14l-4.5-4.5" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round" />

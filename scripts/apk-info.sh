@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Print a JSON description of an APK on stdout.
 #
-#   ./scripts/apk-info.sh target/release/apk/tap-counter.apk > build-info.json
+#   ./scripts/apk-info.sh target/release/apk/wordtee.apk > build-info.json
 #
 # The download page (web/index.html) fetches this at runtime to fill in the
 # version, size, ABIs and checksum, so the page itself stays build-agnostic.
