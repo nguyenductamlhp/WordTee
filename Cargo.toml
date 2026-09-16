@@ -1,0 +1,99 @@
+[package]
+name = "tcheckee"
+version = "0.1.0"
+edition = "2024"
+description = "Tap the screen to increase a counter - an egui app for desktop and Android"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+# `lib` for the binary to link against, `cdylib` for the Android NativeActivity
+# to `dlopen`. The lib name decides the `.so` name, which Android looks up via
+# the `android.app.lib_name` manifest entry below.
+name = "tcheckee"
+crate-type = ["lib", "cdylib"]
+
+[[bin]]
+# Deliberately not called `tcheckee`: on wasm32 a same-named bin and cdylib
+# would both want to produce `tcheckee.wasm`.
+name = "tap-counter"
+path = "src/main.rs"
+
+[dependencies]
+log = "0.4"
+
+[target.'cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
+eframe = { version = "0.36", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "glow",
+    "links",
+    "wayland",
+    "x11",
+] }
+env_logger = { version = "0.11", default-features = false, features = [
+    "auto-color",
+    "humantime",
+] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# No x11/wayland/accesskit/links here: those eframe features are native-only.
+eframe = { version = "0.36", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "web_screen_reader",
+] }
+wasm-bindgen-futures = "0.4"
+
+[target.'cfg(target_os = "android")'.dependencies]
+# `android-native-activity` is incompatible with eframe's `accesskit` feature.
+eframe = { version = "0.36", default-features = false, features = [
+    "android-native-activity",
+    "default_fonts",
+    "glow",
+] }
+android-activity = "0.6"
+android_logger = "0.15"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+# ---------------------------------------------------------------------------
+# Android packaging, read by `cargo apk2`. See android/README or the project
+# README for the full build instructions.
+# ---------------------------------------------------------------------------
+[package.metadata.android]
+package = "com.example.tcheckee"
+apk_name = "tap-counter"
+use_aapt2 = true
+resources = "android/res"
+build_targets = ["aarch64-linux-android", "armv7-linux-androideabi", "x86_64-linux-android"]
+# None of our .so files link libc++_shared (checked with `llvm-readelf -d`), so
+# there is no need to ship 1.8 MB of C++ runtime per ABI. Flip this to `true` if
+# you add a dependency that does.
+include_cplusplus_shared = false
+
+[package.metadata.android.sdk]
+min_sdk_version = 24
+target_sdk_version = 35
+
+[package.metadata.android.application]
+label = "Tap Counter"
+icon = "@mipmap/ic_launcher"
+theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+
+[[package.metadata.android.application.activity]]
+name = "android.app.NativeActivity"
+config_changes = "orientation|keyboardHidden|screenSize|screenLayout|density|uiMode"
+launch_mode = "singleTop"
+exported = true
+
+[[package.metadata.android.application.activity.meta_data]]
+# Selects `libtcheckee.so` from the APK's `lib/<abi>/` directory.
+name = "android.app.lib_name"
+value = "tcheckee"
+
+[[package.metadata.android.application.activity.intent_filter]]
+actions = ["android.intent.action.MAIN"]
+categories = ["android.intent.category.LAUNCHER"]

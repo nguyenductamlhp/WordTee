@@ -1,0 +1,79 @@
+# Builds the Android APK and the WebAssembly demo, then serves one page that
+# offers both: the app running in the browser, and a download link for the APK
+# it just built.
+#
+# Deploy on Coolify
+# -----------------
+#   + New Resource → your Git repository → Docker Compose
+#       Base Directory            /
+#       Docker Compose Location   /docker-compose.yml
+#
+# Coolify clones the repo, runs the build below on the server, and routes its
+# own proxy (Traefik or Caddy) to the container.
+#
+# Run it locally
+# --------------
+#   docker compose build
+#   docker run --rm -p 8080:80 tap-counter-web      # http://localhost:8080
+#
+# and to pull the APK out of the image:
+#
+#   docker run --rm -v "$PWD/out:/out" tap-counter-web \
+#       cp /usr/share/nginx/html/download/tap-counter.apk /out/
+#
+# There is deliberately no `ports:` below. Coolify's proxy reaches the container
+# over the Docker network, so publishing a host port would bypass it — and
+# `coolify-proxy` already binds 80, 443 and 8080, so the obvious choice would
+# collide on deploy. Publishing belongs on the `docker run` above, where it is
+# a local decision.
+#
+# Sizing the build: it pulls the Android SDK and NDK (~2.4 GB) and compiles egui
+# twice, once for Android and once for WebAssembly. Budget ~10 GB of free disk
+# and 4 GB of RAM, and expect the first build to take a while. What ends up
+# running afterwards is only nginx plus ~7 MB of static files.
+
+name: tap-counter
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: runtime
+      args:
+        # arm64 | arm | x86_64 | all
+        #
+        # On Coolify set this under Environment Variables. Coolify's separate
+        # "Build Variables" do not reach Compose builds.
+        APK_ABI: ${APK_ABI:-arm64}
+
+    # Deliberately no `environment:` block. Set the site's address in Coolify's
+    # Domains field for this service instead, as `https://apk.example.com:80` —
+    # the `:80` suffix names the *container* port, the public site still answers
+    # on 80/443.
+    #
+    # Coolify can also generate a domain from your wildcard domain, via a
+    # `SERVICE_URL_WEB_80` variable. If you want that, write it with a trailing
+    # equals sign:
+    #
+    #     environment:
+    #       - SERVICE_URL_WEB_80=
+    #
+    # The bare form the docs show fails on Git-based Compose apps: Coolify turns
+    # the list into a map by splitting each entry on `=`, and an entry with no
+    # `=` keeps its list index, emitting `0: SERVICE_URL_WEB_80`, which Compose
+    # rejects as a non-string key (coollabsio/coolify#5064).
+
+    # Reachable to the proxy on the internal network, not published on the host.
+    expose:
+      - "80"
+
+    restart: unless-stopped
+
+    healthcheck:
+      # If the APK metadata is being served, both build stages produced output.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/download/build-info.json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

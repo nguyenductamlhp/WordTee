@@ -1,0 +1,13 @@
+# Keep the build context small: `target/` alone is several GB.
+target/
+dist/
+out/
+.git/
+.gitignore
+
+# Never bake a signing key into an image layer.
+android/keystore/
+*.jks
+*.keystore
+
+README.md

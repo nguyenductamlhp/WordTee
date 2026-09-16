@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tap Counter — egui on desktop, Android and the web</title>
+    <meta name="description"
+        content="A tiny egui app: tap the screen and the counter goes up. Try it in the browser, or download the Android APK." />
+    <meta name="theme-color" content="#0f1722" />
+
+    <link data-trunk rel="css" href="styles.css" />
+    <link data-trunk rel="rust" href="../Cargo.toml" data-bin="tap-counter" data-wasm-opt="z"
+        data-wasm-opt-params="--enable-bulk-memory-opt --enable-nontrapping-float-to-int" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230f1722'/><circle cx='16' cy='16' r='9' fill='none' stroke='%234db6f5' stroke-width='1.2' opacity='.4'/><circle cx='16' cy='16' r='6' fill='none' stroke='%234db6f5' stroke-width='2'/><circle cx='16' cy='16' r='2.5' fill='%234db6f5'/></svg>" />
+</head>
+
+<body>
+    <header class="site-header">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+            <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".35" />
+            <circle cx="16" cy="16" r="8.5" fill="none" stroke="currentColor" stroke-width="2.4" />
+            <circle cx="16" cy="16" r="3.5" fill="currentColor" />
+        </svg>
+        <div>
+            <h1>Tap Counter</h1>
+            <p class="tagline">One <a href="https://github.com/emilk/egui">egui</a> app, three targets — desktop,
+                Android, and this page.</p>
+        </div>
+    </header>
+
+    <main>
+        <!-- Left: the app itself, running as WebAssembly. -->
+        <section class="demo" aria-labelledby="demo-heading">
+            <h2 id="demo-heading">Try it here</h2>
+            <div class="phone">
+                <div class="phone-bezel">
+                    <div class="phone-screen">
+                        <canvas id="tap-counter-canvas"></canvas>
+                        <div id="boot-status" class="boot-status">
+                            <div class="spinner" aria-hidden="true"></div>
+                            <p>Loading WebAssembly…</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p class="hint">Tap or click inside the screen. <kbd>Space</kbd> works too.</p>
+        </section>
+
+        <!-- Right: the APK. -->
+        <section class="download" aria-labelledby="download-heading">
+            <h2 id="download-heading">Install on Android</h2>
+
+            <a id="apk-link" class="button" href="download/tap-counter.apk" download aria-disabled="true">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 3v11m0 0 4.5-4.5M12 14l-4.5-4.5" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" />
+                </svg>
+                <span id="apk-label">Download APK</span>
+            </a>
+
+            <dl class="facts">
+                <dt>Version</dt>
+                <dd id="fact-version">—</dd>
+                <dt>Size</dt>
+                <dd id="fact-size">—</dd>
+                <dt>ABIs</dt>
+                <dd id="fact-abis">—</dd>
+                <dt>Requires</dt>
+                <dd id="fact-sdk">—</dd>
+                <dt>Built</dt>
+                <dd id="fact-built">—</dd>
+            </dl>
+
+            <details>
+                <summary>SHA-256</summary>
+                <code id="fact-sha" class="sha">—</code>
+            </details>
+
+            <ol class="steps">
+                <li>Open this page on your phone and tap <b>Download APK</b>.</li>
+                <li>Android will warn about installing outside the Play Store — allow it for your browser.</li>
+                <li>Open the downloaded file to install.</li>
+            </ol>
+
+            <p class="warn" id="apk-missing" hidden>
+                No APK in this deployment. Build one with
+                <code>docker compose build</code>, or
+                <code>./scripts/build-apk.sh&nbsp;--release</code>.
+            </p>
+        </section>
+    </main>
+
+    <footer>
+        <p>Built with Rust, <a href="https://github.com/emilk/egui">egui/eframe</a> and
+            <code>NativeActivity</code> — no Gradle, no Java.</p>
+    </footer>
+
+    <script>
+        // The APK is produced by a separate build stage, so its details are
+        // discovered at runtime instead of being baked into this page.
+        (function () {
+            const bytes = (n) => {
+                const units = ["B", "KB", "MB", "GB"];
+                let i = 0;
+                while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+                return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+            };
+            const set = (id, text) => { document.getElementById(id).textContent = text; };
+
+            fetch("download/build-info.json", { cache: "no-store" })
+                .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+                .then((info) => {
+                    const link = document.getElementById("apk-link");
+                    link.href = "download/" + info.apk;
+                    link.removeAttribute("aria-disabled");
+                    set("apk-label", `Download APK · ${bytes(info.size_bytes)}`);
+                    set("fact-version", info.version);
+                    set("fact-size", bytes(info.size_bytes));
+                    set("fact-abis", info.abis.join(", "));
+                    set("fact-sdk", `Android ${info.min_android} or newer (API ${info.min_sdk})`);
+                    set("fact-built", new Date(info.built_at).toLocaleString());
+                    set("fact-sha", info.sha256);
+                })
+                .catch(() => {
+                    const link = document.getElementById("apk-link");
+                    link.classList.add("disabled");
+                    link.removeAttribute("href");
+                    set("apk-label", "APK not available");
+                    document.getElementById("apk-missing").hidden = false;
+                });
+        })();
+    </script>
+</body>
+
+</html>

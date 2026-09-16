@@ -1,0 +1,11 @@
+# Trunk builds the wasm32 version of the `tap-counter` binary and assembles
+# `dist/` from web/index.html. See https://trunkrs.dev
+[build]
+target = "web/index.html"
+dist = "dist"
+
+[serve]
+# `trunk serve` for local development. The APK download link stays inert here
+# unless you copy an APK into dist/download/.
+addresses = ["127.0.0.1"]
+port = 8080
