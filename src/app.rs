@@ -35,7 +35,9 @@ const UNDO_SECONDS: f64 = 5.0;
 /// The four places you can be.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Tab {
+    /// Where the app opens: one word, four meanings, answer and move on.
     #[default]
+    Home,
     Lookup,
     Study,
     Map,
@@ -43,13 +45,19 @@ pub enum Tab {
 }
 
 impl Tab {
-    /// Left-to-right order in the bar. Look up sits third, next to the thumb;
-    /// it is still where the app opens, which [`Tab::default`] decides.
-    const ALL: [Self; 4] = [Self::Study, Self::Map, Self::Lookup, Self::Profile];
+    /// Left-to-right order in the bar.
+    const ALL: [Self; 5] = [
+        Self::Home,
+        Self::Study,
+        Self::Map,
+        Self::Lookup,
+        Self::Profile,
+    ];
 
     /// Shown on hover, since the bar itself is icons.
     fn label(self) -> &'static str {
         match self {
+            Self::Home => "Home",
             Self::Lookup => "Look up",
             Self::Study => "Study",
             Self::Map => "Map",
@@ -59,6 +67,7 @@ impl Tab {
 
     fn icon(self) -> ui::Icon {
         match self {
+            Self::Home => ui::Icon::Home,
             Self::Lookup => ui::Icon::Search,
             Self::Study => ui::Icon::Study,
             Self::Map => ui::Icon::Map,
@@ -120,6 +129,7 @@ pub struct WordTeeApp {
     shown: Shown,
     tab: Tab,
     toast: Option<Toast>,
+    home: ui::home::HomeState,
     lookup: ui::lookup::LookupState,
     study: ui::study::StudyState,
     map: ui::map::MapState,
@@ -139,6 +149,7 @@ impl Default for WordTeeApp {
             shown: Shown::default(),
             tab: Tab::default(),
             toast: None,
+            home: Default::default(),
             lookup: Default::default(),
             study: Default::default(),
             map: Default::default(),
@@ -241,6 +252,7 @@ impl WordTeeApp {
             self.day = day;
             self.progress.roll_to(day);
             self.study.reset();
+            self.home.refresh();
         }
 
         // The setting rides along with the saved progress, so this is also what
@@ -303,6 +315,7 @@ impl WordTeeApp {
         };
 
         egui::CentralPanel::default().show(ui, |ui| match self.tab {
+            Tab::Home => ui::home::show(ui, &mut ctx, &mut self.home),
             Tab::Lookup => ui::lookup::show(ui, &mut ctx, &mut self.lookup),
             Tab::Study => ui::study::show(ui, &mut ctx, &mut self.study),
             Tab::Map => ui::map::show(ui, &mut ctx, &mut self.map),
@@ -597,15 +610,55 @@ mod tests {
     }
 
     #[test]
-    fn the_bar_runs_study_map_lookup_you() {
-        assert_eq!(Tab::ALL, [Tab::Study, Tab::Map, Tab::Lookup, Tab::Profile]);
-        // Reordering the bar must not change where the app opens.
-        assert_eq!(Tab::default(), Tab::Lookup);
-        assert_eq!(Harness::new().app.tab(), Tab::Lookup);
+    fn the_bar_runs_home_study_map_lookup_you() {
+        assert_eq!(
+            Tab::ALL,
+            [Tab::Home, Tab::Study, Tab::Map, Tab::Lookup, Tab::Profile]
+        );
+        // The app opens on Home.
+        assert_eq!(Tab::default(), Tab::Home);
+        assert_eq!(Harness::new().app.tab(), Tab::Home);
         // Every tab needs its own icon, or the bar is ambiguous.
         let icons: std::collections::BTreeSet<_> =
             Tab::ALL.iter().map(|t| format!("{:?}", t.icon())).collect();
         assert_eq!(icons.len(), Tab::ALL.len());
+    }
+
+    #[test]
+    fn home_is_what_the_app_opens_on_and_it_has_a_question() {
+        let mut h = Harness::new();
+        assert_eq!(h.app.tab(), Tab::Home);
+        h.settle();
+        // Nothing to set up and nothing due: a first-run user still gets asked
+        // something on the very first frame.
+        assert_eq!(h.app.home.answered(), (0, 0));
+    }
+
+    #[test]
+    fn answering_on_home_moves_mastery_and_the_streak() {
+        let mut h = Harness::new();
+        h.on(Tab::Home);
+        let sense = h.app.dict.at_rank(1_100).unwrap();
+        let before = h.app.progress.mastery(&sense);
+
+        h.app
+            .progress
+            .start_learning(sense.id, Source::Manual, h.app.day);
+        for _ in 0..3 {
+            let day = h.app.progress.card(sense.id).unwrap().due;
+            h.app.progress.answer(
+                sense.id,
+                crate::srs::Outcome {
+                    correct: true,
+                    hesitated: false,
+                    level: 1,
+                },
+                day,
+            );
+        }
+        let after = h.app.progress.mastery(&sense);
+        assert!(after > before, "{before} -> {after}");
+        h.settle();
     }
 
     #[test]

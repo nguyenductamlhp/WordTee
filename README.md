@@ -10,31 +10,44 @@ server, no account and no network call at any point. The same Rust code runs as
 a native desktop binary, as an Android APK, and as WebAssembly in a browser.
 
 The interface is in English; the meanings are Vietnamese, which is what the
-dictionary holds. The bottom bar is four icons over captions — Study, Map,
-Look up, You — drawn rather than typed, for the reason in the next section.
+dictionary holds. The bottom bar is five icons over captions — Home, Study,
+Map, Look up, You — drawn rather than typed, for the reason below.
 
 ```
 ┌────────────────────────────────┐
 │ WordTee            10 due · 1d │
 ├────────────────────────────────┤
-│ swimming                       │
-├────────────────────────────────┤
-│ swim  /ˈswɪm/   inflected form │
-│ “swimming” is the present      │
-│ participle / gerund of this    │
+│         swimming               │
+│       /ˈswɪm.mɪŋ/              │
+│      n. · Advanced #5,105      │
 │ ────────────────────────────── │
-│ 1. [v.] Learning · Core #2,471 │
-│    Bơi, lội.                   │
-│    to swim across a river      │
+│    What does it mean?          │
+│   [ Sự bơi. ]                  │
+│   [ Tờ (giấy). ]               │
+│   [ Trổ lá, ra lá. ]           │
+│   [ Dở (sách). ]               │
 ├────────────────────────────────┤
-│ [I know] [Quick test] [Learn]  │
+│  Mastery  38% → 46%            │
+│  ████████░░░░░░░░░░            │
 ├────────────────────────────────┤
-│  cap    grid    lens    bust   │
-│ Study   Map   Look up   You    │
+│ home   cap   grid  lens  bust  │
+│ Home  Study  Map Look up  You  │
 └────────────────────────────────┘
 ```
 
 ## What it does
+
+**Home.** Where the app opens: one English word, four Vietnamese meanings, pick
+one. There is nothing to start and nothing to finish, which is the point — it
+is the lowest-friction way in. Answering moves the same FSRS card a study
+session would, so a right answer lengthens the interval and fills the mastery
+bar while a wrong one is a lapse that shortens it and drops the bar back. The
+meter is not a separate score: it reads the card's own stability against spec
+3.4's 60-day mastery threshold, so the bar and the schedule can never disagree.
+
+What it asks about is not random either. Anything already due comes first, so
+the quick game doubles as review; only when nothing is waiting does it reach
+into the Smart Feeding window for new words.
 
 **Search (spec 1.1).** Four match tiers, ranked by
 `tier → edit distance → personal boost → frequency`, never alphabetically:
@@ -82,9 +95,9 @@ climb three levels as a card stabilises: recognise → recall → produce.
 **Map (spec 2.3).** 25 blocks of 1,000 items, each with the spec's four-colour
 bar. Inferred progress is hatched so it never reads as confirmed.
 
-**Icons.** Painted with egui's own shapes rather than typed: a mortarboard, a
-grid of blocks that mirrors the knowledge map, a magnifier, a bust, and the two
-speakers on the audio buttons — two waves for normal speed, one for slow. Every character the bar tried before this came from a fallback font in a
+**Icons.** Painted with egui's own shapes rather than typed: a house, a
+mortarboard, a grid of blocks that mirrors the knowledge map, a magnifier, a
+bust, and the two speakers on the audio buttons — two waves for normal speed, one for slow. Every character the bar tried before this came from a fallback font in a
 different typeface, and the map glyph existed in only the crudest of them.
 Shapes take about as many lines, always match the text colour beside them, and
 cannot go missing. The caption under each is painted too, so it is one centred

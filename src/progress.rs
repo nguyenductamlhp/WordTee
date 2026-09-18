@@ -325,6 +325,37 @@ impl Progress {
         self.rev
     }
 
+    /// How well one item is known, 0 to 1.
+    ///
+    /// Not a separate score: it reads the same FSRS stability the scheduler
+    /// runs on, against spec 3.4's 60-day mastery threshold. So the Home
+    /// screen's meter and the review schedule can never disagree — a right
+    /// answer lengthens the interval and fills the bar by the same act.
+    pub fn mastery(&self, sense: &Sense) -> f32 {
+        let state = self.state(sense);
+        let floor = match state {
+            State::Unexplored => return 0.0,
+            State::Mastered => return 1.0,
+            // Inferred, not demonstrated: a quarter of the way, no more.
+            State::AssumedKnown => 0.25,
+            State::Known => 0.5,
+            State::Learning | State::Review => 0.0,
+        };
+        let stability = self
+            .cards
+            .get(&sense.id)
+            .and_then(|c| c.memory)
+            .map_or(0.0, |m| m.stability);
+        // Stability grows geometrically, so a linear bar would sit near zero
+        // for the first several reviews. The log keeps it moving.
+        let earned = if stability <= 0.0 {
+            0.0
+        } else {
+            (stability.ln() / MASTERED_STABILITY.ln()).clamp(0.0, 1.0)
+        };
+        earned.max(floor).clamp(0.0, 1.0)
+    }
+
     pub fn card(&self, sense: SenseId) -> Option<&Card> {
         self.cards.get(&sense)
     }
@@ -1013,6 +1044,61 @@ mod tests {
         p.start_learning(s.id, Source::Manual, 5);
         p.mark_reminded(5 * hour);
         assert!(!p.reminder_due(6 * hour, 3));
+    }
+
+    #[test]
+    fn mastery_rises_with_right_answers_and_falls_with_wrong() {
+        let dict = Dict::load();
+        let mut p = Progress::default();
+        let s = sense(&dict, 1_500);
+        assert_eq!(p.mastery(&s), 0.0, "an untouched item is at zero");
+
+        p.start_learning(s.id, Source::Manual, 0);
+        let mut day = 0;
+        let mut climbing = vec![p.mastery(&s)];
+        for _ in 0..8 {
+            p.answer(s.id, right(2), day);
+            day = p.card(s.id).unwrap().due;
+            climbing.push(p.mastery(&s));
+        }
+        assert!(
+            climbing.windows(2).all(|w| w[1] >= w[0]),
+            "mastery fell on a right answer: {climbing:?}"
+        );
+        let peak = p.mastery(&s);
+        assert!(peak > 0.5, "eight right answers only reached {peak}");
+
+        // And a wrong one takes it back down.
+        p.answer(s.id, wrong(), day);
+        assert!(p.mastery(&s) < peak, "mastery held after a wrong answer");
+    }
+
+    #[test]
+    fn mastery_stays_inside_its_range() {
+        let dict = Dict::load();
+        let mut p = Progress::default();
+        let s = sense(&dict, 2_200);
+        p.start_learning(s.id, Source::Manual, 0);
+        let mut day = 0;
+        for i in 0..60 {
+            let outcome = if i % 5 == 0 { wrong() } else { right(3) };
+            p.answer(s.id, outcome, day);
+            day = p.card(s.id).unwrap().due;
+            let m = p.mastery(&s);
+            assert!((0.0..=1.0).contains(&m), "mastery {m} at step {i}");
+        }
+    }
+
+    #[test]
+    fn inferred_knowledge_is_not_full_mastery() {
+        // Spec 0.2 keeps Assumed_Known soft; the meter has to show that.
+        let dict = Dict::load();
+        let mut p = Progress::default();
+        p.apply_placement(3_000, 8.0);
+        let assumed = sense(&dict, 500);
+        assert_eq!(p.state(&assumed), State::AssumedKnown);
+        let m = p.mastery(&assumed);
+        assert!((0.0..0.5).contains(&m), "assumed-known sat at {m}");
     }
 
     #[test]

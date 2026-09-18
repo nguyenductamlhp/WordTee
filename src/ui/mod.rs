@@ -1,5 +1,6 @@
 //! The screens, and the bits of chrome they share.
 
+pub mod home;
 pub mod lookup;
 pub mod map;
 pub mod profile;
@@ -272,6 +273,7 @@ fn hatch(painter: &egui::Painter, rect: egui::Rect) {
 /// The four icons in the navigation bar.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Icon {
+    Home,
     Search,
     Study,
     Map,
@@ -288,7 +290,13 @@ pub enum Icon {
 /// came from a fallback font in a different typeface, and the map glyph existed
 /// in only the crudest of them. Shapes take about as many lines, always match
 /// the text colour beside them, scale to any size, and cannot go missing.
-pub fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
+pub fn paint_icon(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    icon: Icon,
+    color: Color32,
+    background: Color32,
+) {
     // Everything below is expressed in a unit square and mapped onto `rect`,
     // so the shapes stay in proportion at any size.
     let at = |x: f32, y: f32| rect.min + egui::vec2(rect.width() * x, rect.height() * y);
@@ -296,6 +304,35 @@ pub fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: 
     let line = egui::Stroke::new((unit * 0.09).max(1.5), color);
 
     match icon {
+        Icon::Home => {
+            // A roof over a body, the body sitting under the eaves.
+            painter.add(egui::Shape::convex_polygon(
+                vec![at(0.5, 0.06), at(0.98, 0.48), at(0.02, 0.48)],
+                color,
+                egui::Stroke::NONE,
+            ));
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    at(0.16, 0.44),
+                    at(0.84, 0.44),
+                    at(0.84, 0.94),
+                    at(0.16, 0.94),
+                ],
+                color,
+                egui::Stroke::NONE,
+            ));
+            // A doorway, punched out in the panel colour behind it.
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    at(0.40, 0.62),
+                    at(0.60, 0.62),
+                    at(0.60, 0.94),
+                    at(0.40, 0.94),
+                ],
+                background,
+                egui::Stroke::NONE,
+            ));
+        }
         Icon::Search => {
             painter.circle_stroke(at(0.42, 0.42), unit * 0.27, line);
             painter.line_segment([at(0.63, 0.63), at(0.88, 0.88)], line);
@@ -421,6 +458,7 @@ pub fn icon_button(ui: &mut egui::Ui, icon: Icon, tooltip: &str) -> egui::Respon
         egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(SIDE * 0.58)),
         icon,
         visuals.fg_stroke.color,
+        visuals.weak_bg_fill,
     );
     response.on_hover_text(tooltip)
 }
@@ -445,7 +483,13 @@ pub fn tab_button(ui: &mut egui::Ui, icon: Icon, selected: bool, label: &str) ->
         egui::pos2(rect.center().x, rect.top() + 5.0 + ICON / 2.0),
         egui::vec2(ICON, ICON),
     );
-    paint_icon(ui.painter(), icon_box, icon, color);
+    // The cut-out in the home icon shows whatever is behind the tab.
+    let behind = if selected {
+        toward_background(ui, color, 0.20)
+    } else {
+        ui.visuals().panel_fill
+    };
+    paint_icon(ui.painter(), icon_box, icon, color, behind);
 
     // Painted rather than laid out as a widget, so the caption cannot wrap the
     // way the old text-only bar did — it is one line, centred, always.
@@ -578,8 +622,16 @@ mod tests {
         ctx.run_ui(Default::default(), |ui| {
             for side in [0.0f32, 1.0, 8.0, 24.0, 96.0] {
                 let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(side, side));
-                for icon in [Icon::Search, Icon::Study, Icon::Map, Icon::Person] {
-                    paint_icon(ui.painter(), rect, icon, Color32::WHITE);
+                for icon in [
+                    Icon::Home,
+                    Icon::Search,
+                    Icon::Study,
+                    Icon::Map,
+                    Icon::Person,
+                    Icon::Speaker,
+                    Icon::SpeakerSlow,
+                ] {
+                    paint_icon(ui.painter(), rect, icon, Color32::WHITE, Color32::BLACK);
                 }
             }
         })
