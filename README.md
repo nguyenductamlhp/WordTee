@@ -82,9 +82,9 @@ climb three levels as a card stabilises: recognise → recall → produce.
 **Map (spec 2.3).** 25 blocks of 1,000 items, each with the spec's four-colour
 bar. Inferred progress is hatched so it never reads as confirmed.
 
-**Icons.** The navigation bar's four icons are painted with egui's own shapes:
-a mortarboard, a grid of blocks that mirrors the knowledge map, a magnifier and
-a bust. Every character the bar tried before this came from a fallback font in a
+**Icons.** Painted with egui's own shapes rather than typed: a mortarboard, a
+grid of blocks that mirrors the knowledge map, a magnifier, a bust, and the two
+speakers on the audio buttons — two waves for normal speed, one for slow. Every character the bar tried before this came from a fallback font in a
 different typeface, and the map glyph existed in only the crudest of them.
 Shapes take about as many lines, always match the text colour beside them, and
 cannot go missing. The caption under each is painted too, so it is one centred
@@ -93,6 +93,14 @@ line at any width — the labels used to wrap and buckle the bar.
 **Themes.** Light by default, dark on request, switchable under **You →
 Settings** and saved with the rest of your progress. Colours are chosen per
 theme rather than shared: a blue legible on near-black washes out on white.
+
+**Reminders (spec 3.6).** Off, every 4h, every 8h or once a day, under the same
+settings. An interval rather than a clock time, because `SystemTime` is UTC on
+every platform here and the app has no reliable local timezone — "every four
+hours" is a promise it can keep and "every day at 8pm" is not. Two guards make
+it bearable: nothing is sent when the queue is empty, and finishing a session
+buys a full interval of quiet. The browser can raise a real notification while
+the page is open; everywhere else it is an in-app message (see the gaps table).
 
 ## The dictionary
 
@@ -157,6 +165,7 @@ these are the honest gaps:
 | 1.2 Phrasal verbs as their own entries | The source has 8.154 phrase entries (idioms, noun phrases) but is missing the common phrasal verbs — no `give up`, `look up`, `run out of`. Nothing to show. |
 | 1.4 On-device TTS | Web only, via the browser's speech synthesis. Desktop and Android would each need a platform binding; the IPA and examples are shown either way. |
 | 1.4 Audio packs, LRU cache, sync | No audio files ship, and there is no server — progress is local, as asked. |
+| 3.6 Push reminders | The setting and its schedule are real and tested, but delivery outside the app is browser-only and only while the page is open. A scheduled OS push needs a notification channel and an alarm on Android, and a launch agent on desktop; neither is in this build. |
 | 1.2 / 2.1 Sense ranking | The spec samples corpus sentences and has a model label each with a sense. No tagged corpus ships, so a headword's Zipf score is split across its senses as 1/(i+1) in dictionary order. Order *within* a headword is right; the split between headwords is an estimate. |
 | 2.1 Frequency formula | Spoken only (OpenSubtitles). COCA and BNC are commercial, so the 0,6/0,4 blend and Juilland's *D* dispersion cannot be computed from the aggregated counts available. |
 | 1.1 Double Metaphone | Folded into the edit-distance tier, which already covers both of the spec's own examples (`teh`, `fonetic`) at two edits. |

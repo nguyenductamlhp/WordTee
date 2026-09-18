@@ -250,6 +250,21 @@ impl WordTeeApp {
             Self::apply_theme(ui.ctx(), self.progress.theme);
         }
 
+        // Spec 3.6's reminder, at whatever interval the user chose.
+        let (due, new, _) = self.study.pending(&self.dict, &self.progress, self.day);
+        let waiting = due + new;
+        let secs = progress::now_secs();
+        if self.progress.reminder_due(secs, waiting) {
+            self.progress.mark_reminded(secs);
+            let body = format!("{waiting} words are waiting.");
+            ui::notify("Time to study", &body);
+            self.toast = Some(Toast {
+                message: format!("Time to study — {body}"),
+                undo: None,
+                born: now,
+            });
+        }
+
         let mut goto = None;
         let mut open_word = None;
 
@@ -263,9 +278,9 @@ impl WordTeeApp {
                         let color = ui::good(ui);
                         ui::chip(ui, &format!("{}d streak", self.progress.streak), color);
                     }
-                    let (due, new, _) = self.study.pending(&self.dict, &self.progress, self.day);
-                    if due + new > 0 {
-                        ui::chip(ui, &format!("{} due", due + new), ui::warn(ui));
+                    if waiting > 0 {
+                        let color = ui::warn(ui);
+                        ui::chip(ui, &format!("{waiting} due"), color);
                     }
                 });
             });

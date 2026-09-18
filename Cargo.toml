@@ -49,6 +49,13 @@ eframe = { version = "0.36", default-features = false, features = [
     "web_screen_reader",
 ] }
 wasm-bindgen-futures = "0.4"
+# eframe already pulls web-sys in; this only turns on the Notification API, so
+# the reminder setting has somewhere real to deliver.
+web-sys = { version = "0.3", features = [
+    "Notification",
+    "NotificationOptions",
+    "NotificationPermission",
+] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 # `android-native-activity` is incompatible with eframe's `accesskit` feature.

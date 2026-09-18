@@ -5,7 +5,7 @@ use eframe::egui::{self, RichText};
 
 use crate::app::Ctx;
 use crate::placement::{FALSE_ALARM_LIMIT, MAX_ITEMS, Placement, Verdict};
-use crate::progress::{Progress, State, Theme};
+use crate::progress::{Progress, Reminders, State, Theme};
 use crate::ui;
 
 #[derive(Default)]
@@ -154,6 +154,46 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                     }
                 }
             });
+
+            ui.add_space(8.0);
+            // Spec 3.6: "Nhắc ôn qua thông báo đẩy".
+            ui.label(RichText::new("Study reminders").size(13.0));
+            ui.horizontal_wrapped(|ui| {
+                for rate in Reminders::ALL {
+                    let on = ctx.progress.reminders == rate;
+                    if ui.selectable_label(on, rate.label()).clicked() {
+                        ctx.progress.reminders = rate;
+                        // Start the clock now, so switching it on does not fire
+                        // immediately off the back of an old timestamp.
+                        let now = crate::progress::now_secs();
+                        ctx.progress.mark_reminded(now);
+                    }
+                }
+            });
+            if ctx.progress.reminders != Reminders::Off {
+                let note = if !ui::can_notify() {
+                    "Shown inside the app. Notifications outside it need a \
+                     platform integration this build does not have."
+                } else if ui::notifications_allowed() {
+                    "Sent as a browser notification while WordTee is open, and \
+                     shown inside the app either way."
+                } else {
+                    "Shown inside the app. Allow notifications to get them \
+                     from the browser too."
+                };
+                ui.label(RichText::new(note).size(11.5).color(ui::muted(ui)));
+                if ui::can_notify()
+                    && !ui::notifications_allowed()
+                    && ui.button("Allow notifications").clicked()
+                {
+                    ui::request_notifications();
+                }
+                ui.label(
+                    RichText::new("Only when something is actually waiting.")
+                        .size(11.5)
+                        .color(ui::muted(ui)),
+                );
+            }
 
             ui.add_space(8.0);
             ui.label(RichText::new("New words per day").size(13.0));

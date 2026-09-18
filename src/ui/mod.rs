@@ -276,6 +276,10 @@ pub enum Icon {
     Study,
     Map,
     Person,
+    /// Play the audio at normal speed.
+    Speaker,
+    /// Play it slowly: the same speaker, one wave instead of two.
+    SpeakerSlow,
 }
 
 /// Paints `icon` to fill `rect`.
@@ -338,6 +342,35 @@ pub fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: 
                 }
             }
         }
+        Icon::Speaker | Icon::SpeakerSlow => {
+            // A speaker: the neck, then the cone.
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    at(0.04, 0.37),
+                    at(0.24, 0.37),
+                    at(0.24, 0.63),
+                    at(0.04, 0.63),
+                ],
+                color,
+                egui::Stroke::NONE,
+            ));
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    at(0.22, 0.38),
+                    at(0.48, 0.10),
+                    at(0.48, 0.90),
+                    at(0.22, 0.62),
+                ],
+                color,
+                egui::Stroke::NONE,
+            ));
+            // One wave for the slow button, two for the normal one — fewer
+            // waves reads as "less", and the tooltip carries the exact speed.
+            arc(painter, at(0.46, 0.5), unit * 0.22, -55.0, 55.0, line);
+            if icon == Icon::Speaker {
+                arc(painter, at(0.46, 0.5), unit * 0.38, -55.0, 55.0, line);
+            }
+        }
         Icon::Person => {
             painter.circle_filled(at(0.5, 0.28), unit * 0.185, color);
             // Shoulders: a rounded slab, clipped flat at the bottom.
@@ -348,6 +381,48 @@ pub fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: 
             );
         }
     }
+}
+
+/// A circular arc, which the painter has no primitive for.
+fn arc(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    radius: f32,
+    from_deg: f32,
+    to_deg: f32,
+    stroke: egui::Stroke,
+) {
+    const STEPS: usize = 14;
+    let points = (0..=STEPS)
+        .map(|i| {
+            let t = from_deg + (to_deg - from_deg) * i as f32 / STEPS as f32;
+            let (sin, cos) = t.to_radians().sin_cos();
+            center + egui::vec2(cos * radius, sin * radius)
+        })
+        .collect();
+    painter.add(egui::Shape::line(points, stroke));
+}
+
+/// A small square button carrying one icon.
+pub fn icon_button(ui: &mut egui::Ui, icon: Icon, tooltip: &str) -> egui::Response {
+    const SIDE: f32 = 28.0;
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(SIDE, SIDE), egui::Sense::click());
+    // Borrow egui's own hover and press colours so it behaves like a button.
+    let visuals = *ui.style().interact(&response);
+    ui.painter().rect(
+        rect,
+        visuals.corner_radius,
+        visuals.weak_bg_fill,
+        visuals.bg_stroke,
+        egui::StrokeKind::Inside,
+    );
+    paint_icon(
+        ui.painter(),
+        egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(SIDE * 0.58)),
+        icon,
+        visuals.fg_stroke.color,
+    );
+    response.on_hover_text(tooltip)
 }
 
 /// One tab — icon over caption — filling its column.
@@ -418,18 +493,66 @@ pub fn speak(text: &str, rate: f32) {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn speak(_text: &str, _rate: f32) {}
 
+// -------------------------------------------------------------------------
+// study reminders (spec 3.6)
+// -------------------------------------------------------------------------
+
+/// Can this build raise a notification outside the app?
+///
+/// Only the browser can, and only while the page is open. A real scheduled
+/// push would need a platform service — a notification channel and an alarm on
+/// Android, a launch agent on desktop — which this build does not carry. The
+/// in-app reminder is shown on every platform regardless.
+pub fn can_notify() -> bool {
+    cfg!(target_arch = "wasm32")
+}
+
+/// Has the user already allowed notifications?
+#[cfg(target_arch = "wasm32")]
+pub fn notifications_allowed() -> bool {
+    web_sys::Notification::permission() == web_sys::NotificationPermission::Granted
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn notifications_allowed() -> bool {
+    false
+}
+
+/// Asks the browser for permission. The prompt is asynchronous; the answer
+/// simply shows up in [`notifications_allowed`] on a later frame.
+#[cfg(target_arch = "wasm32")]
+pub fn request_notifications() {
+    let _ = web_sys::Notification::request_permission();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn request_notifications() {}
+
+/// Raises a notification, if this platform has one and the user allowed it.
+#[cfg(target_arch = "wasm32")]
+pub fn notify(title: &str, body: &str) {
+    if !notifications_allowed() {
+        return;
+    }
+    let options = web_sys::NotificationOptions::new();
+    options.set_body(body);
+    let _ = web_sys::Notification::new_with_options(title, &options);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn notify(_title: &str, _body: &str) {}
+
 /// The two speed buttons of spec 1.3, drawn only where they would work.
 pub fn speak_buttons(ui: &mut egui::Ui, text: &str) {
     if !can_speak() {
         return;
     }
-    // Spelled out rather than 🔊/🐢: those live only in the fallback emoji
-    // fonts, so they arrive in a different typeface — or, for the turtle, not
-    // at all.
-    if ui.button("Play").clicked() {
+    // Painted rather than 🔊/🐢: those live only in the fallback emoji fonts,
+    // so they arrive in a different typeface — or, for the turtle, not at all.
+    if icon_button(ui, Icon::Speaker, "Play").clicked() {
         speak(text, 1.0);
     }
-    if ui.button("0.75×").on_hover_text("Play slowly").clicked() {
+    if icon_button(ui, Icon::SpeakerSlow, "Play slowly (0.75×)").clicked() {
         speak(text, 0.75);
     }
 }

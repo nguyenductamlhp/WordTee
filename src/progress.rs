@@ -50,6 +50,56 @@ const LEVEL3_STABILITY: f32 = 21.0;
 /// Successful reviews before a Learning item graduates to Review (spec 3.1).
 const GRADUATE_REPS: u32 = 2;
 
+/// Unix seconds. Reminders are the one thing here finer-grained than a day.
+pub fn now_secs() -> i64 {
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
+/// How often to nudge the user back to studying (spec 3.6: "Nhắc ôn qua thông
+/// báo đẩy vào khung giờ người dùng hay học").
+///
+/// An interval rather than a clock time on purpose: the app has no reliable
+/// local timezone — `SystemTime` is UTC everywhere — so "every four hours" is
+/// a promise it can keep and "every day at 8pm" is not.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Reminders {
+    Off,
+    EveryFourHours,
+    EveryEightHours,
+    #[default]
+    Daily,
+}
+
+impl Reminders {
+    pub const ALL: [Self; 4] = [
+        Self::Off,
+        Self::EveryFourHours,
+        Self::EveryEightHours,
+        Self::Daily,
+    ];
+
+    /// Hours between nudges, or `None` when switched off.
+    pub fn every_hours(self) -> Option<i64> {
+        match self {
+            Self::Off => None,
+            Self::EveryFourHours => Some(4),
+            Self::EveryEightHours => Some(8),
+            Self::Daily => Some(24),
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::EveryFourHours => "Every 4h",
+            Self::EveryEightHours => "Every 8h",
+            Self::Daily => "Once a day",
+        }
+    }
+}
+
 /// Which colour scheme to draw in.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum Theme {
@@ -193,6 +243,10 @@ pub struct Progress {
     /// FSRS desired retention, 0,8–0,95 (spec 3.2).
     pub retention: f32,
     pub theme: Theme,
+    /// How often to nudge about studying (spec 3.6).
+    pub reminders: Reminders,
+    /// Unix seconds of the last nudge, so one interval means one nudge.
+    pub last_reminded: i64,
     pub streak: u32,
     pub best_streak: u32,
     /// Last day the user studied, for the streak.
@@ -227,6 +281,8 @@ impl Default for Progress {
             daily_goal: 10,
             retention: 0.9,
             theme: Theme::Light,
+            reminders: Reminders::default(),
+            last_reminded: 0,
             streak: 0,
             best_streak: 0,
             last_active: 0,
@@ -293,6 +349,25 @@ impl Progress {
             ra.total_cmp(&rb).then(a.cmp(b))
         });
         due
+    }
+
+    /// Is a study nudge due? (spec 3.6)
+    ///
+    /// Two guards beyond the interval: nothing is sent when the queue is empty,
+    /// because a notification with nothing behind it is the fastest way to have
+    /// notifications turned off; and studying counts as a nudge answered, so
+    /// finishing a session buys a full interval of quiet.
+    pub fn reminder_due(&self, now: i64, waiting: usize) -> bool {
+        let Some(every) = self.reminders.every_hours() else {
+            return false;
+        };
+        waiting > 0 && now.saturating_sub(self.last_reminded) >= every * 3_600
+    }
+
+    /// Restarts the reminder interval — after a nudge, or after studying.
+    pub fn mark_reminded(&mut self, now: i64) {
+        self.last_reminded = now;
+        self.rev += 1;
     }
 
     /// Spec 3.6: once the backlog is this deep, stop feeding new items.
@@ -856,6 +931,91 @@ mod tests {
     }
 
     #[test]
+    fn reminders_respect_the_chosen_interval() {
+        let mut p = Progress {
+            reminders: Reminders::EveryFourHours,
+            ..Progress::default()
+        };
+        p.mark_reminded(0);
+        let hour = 3_600;
+
+        assert!(!p.reminder_due(3 * hour, 5), "fired early");
+        assert!(p.reminder_due(4 * hour, 5), "did not fire on time");
+        assert!(p.reminder_due(40 * hour, 5), "did not fire late");
+
+        // A nudge restarts the interval, so one interval means one nudge.
+        p.mark_reminded(4 * hour);
+        assert!(!p.reminder_due(5 * hour, 5));
+        assert!(p.reminder_due(8 * hour, 5));
+    }
+
+    #[test]
+    fn reminders_stay_quiet_with_nothing_to_study() {
+        // A notification with nothing behind it is how notifications get
+        // switched off for good.
+        let mut p = Progress {
+            reminders: Reminders::Daily,
+            ..Progress::default()
+        };
+        p.mark_reminded(0);
+        assert!(
+            !p.reminder_due(100 * 3_600, 0),
+            "nagged about an empty queue"
+        );
+        assert!(p.reminder_due(100 * 3_600, 1));
+    }
+
+    #[test]
+    fn reminders_off_means_off() {
+        let mut p = Progress {
+            reminders: Reminders::Off,
+            ..Progress::default()
+        };
+        p.mark_reminded(0);
+        assert_eq!(Reminders::Off.every_hours(), None);
+        assert!(!p.reminder_due(10_000 * 3_600, 99));
+    }
+
+    #[test]
+    fn every_reminder_rate_is_distinct_and_named() {
+        let mut seen = std::collections::BTreeSet::new();
+        for rate in Reminders::ALL {
+            assert!(!rate.label().is_empty());
+            assert!(
+                seen.insert(rate.every_hours()),
+                "{rate:?} duplicates another"
+            );
+        }
+        // Longer settings really are longer.
+        let hours: Vec<_> = Reminders::ALL
+            .iter()
+            .filter_map(|r| r.every_hours())
+            .collect();
+        assert!(
+            hours.windows(2).all(|w| w[0] < w[1]),
+            "{hours:?} not ascending"
+        );
+    }
+
+    #[test]
+    fn studying_buys_a_full_interval_of_quiet() {
+        let dict = Dict::load();
+        let mut p = Progress {
+            reminders: Reminders::EveryFourHours,
+            ..Progress::default()
+        };
+        let hour = 3_600;
+        p.mark_reminded(0);
+        assert!(p.reminder_due(5 * hour, 3));
+
+        // Finishing a session marks the nudge answered.
+        let s = sense(&dict, 900);
+        p.start_learning(s.id, Source::Manual, 5);
+        p.mark_reminded(5 * hour);
+        assert!(!p.reminder_due(6 * hour, 3));
+    }
+
+    #[test]
     fn progress_survives_a_round_trip() {
         let dict = Dict::load();
         let mut p = Progress::default();
@@ -865,9 +1025,14 @@ mod tests {
         p.answer(s.id, right(2), 42);
         p.note_lookup(s.word, &[]);
 
+        p.reminders = Reminders::EveryEightHours;
+        p.mark_reminded(1_700_000_000);
+
         let text = ron::to_string(&p).expect("serialises");
         let back: Progress = ron::from_str(&text).expect("deserialises");
         assert_eq!(back.assumed_below, 2_500);
+        assert_eq!(back.reminders, Reminders::EveryEightHours);
+        assert_eq!(back.last_reminded, 1_700_000_000);
         assert_eq!(back.state(&s), p.state(&s));
         assert_eq!(back.card(s.id).unwrap().reps, 1);
         assert!(back.lookups.contains(&s.word));
