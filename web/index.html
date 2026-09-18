@@ -4,9 +4,9 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WordTee — egui on desktop, Android and the web</title>
+    <title>WordTee — học từ vựng tiếng Anh, chạy offline</title>
     <meta name="description"
-        content="A tiny egui app: tap the screen and the counter goes up. Try it in the browser, or download the Android APK." />
+        content="Từ điển Anh–Việt và ứng dụng học từ vựng chạy hoàn toàn offline: tra từ, kiểm tra trình độ, ôn tập theo FSRS. Dùng thử trên trình duyệt hoặc tải APK cho Android." />
     <meta name="theme-color" content="#0f1722" />
 
     <link data-trunk rel="css" href="styles.css" />
@@ -24,32 +24,33 @@
         </svg>
         <div>
             <h1>WordTee</h1>
-            <p class="tagline">One <a href="https://github.com/emilk/egui">egui</a> app, three targets — desktop,
-                Android, and this page.</p>
+            <p class="tagline">Học từ vựng tiếng Anh, chạy offline. Một <a href="https://github.com/emilk/egui">egui</a> app, ba nền tảng — desktop,
+                Android, và chính trang này.</p>
         </div>
     </header>
 
     <main>
         <!-- Left: the app itself, running as WebAssembly. -->
         <section class="demo" aria-labelledby="demo-heading">
-            <h2 id="demo-heading">Try it here</h2>
+            <h2 id="demo-heading">Dùng thử ngay</h2>
             <div class="phone">
                 <div class="phone-bezel">
                     <div class="phone-screen">
                         <canvas id="wordtee-canvas"></canvas>
                         <div id="boot-status" class="boot-status">
                             <div class="spinner" aria-hidden="true"></div>
-                            <p>Loading WebAssembly…</p>
+                            <p>Đang tải… (từ điển 19 MB, chỉ lần đầu)</p>
                         </div>
                     </div>
                 </div>
             </div>
-            <p class="hint">Tap or click inside the screen. <kbd>Space</kbd> works too.</p>
+            <p class="hint">Thử tra <b>swimming</b>, <b>teh</b> hoặc <b>quyết định</b>. Toàn bộ từ điển
+                (119.296 mục từ) nằm trong bản build — lần tải đầu hơi nặng, sau đó chạy offline.</p>
         </section>
 
         <!-- Right: the APK. -->
         <section class="download" aria-labelledby="download-heading">
-            <h2 id="download-heading">Install on Android</h2>
+            <h2 id="download-heading">Cài trên Android</h2>
 
             <a id="apk-link" class="button" href="download/wordtee.apk" download aria-disabled="true">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -80,7 +81,7 @@
             </details>
 
             <ol class="steps">
-                <li>Open this page on your phone and tap <b>Download APK</b>.</li>
+                <li>Mở trang này trên điện thoại và bấm <b>Download APK</b>.</li>
                 <li>Android will warn about installing outside the Play Store — allow it for your browser.</li>
                 <li>Open the downloaded file to install.</li>
             </ol>

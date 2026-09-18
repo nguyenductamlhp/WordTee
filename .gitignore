@@ -28,3 +28,6 @@ android/keystore/
 # Trunk (web) output and the APK export directory used by docker compose
 dist/
 out/
+
+# Python bytecode from scripts/
+__pycache__/
