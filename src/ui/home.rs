@@ -14,6 +14,8 @@
 use eframe::egui::{self, RichText};
 
 use crate::app::Ctx;
+use std::collections::VecDeque;
+
 use crate::dict::{SenseId, WordId};
 use crate::progress::{Source, State};
 use crate::quiz::{self, Choice};
@@ -24,6 +26,11 @@ use crate::ui;
 /// Answering slower than this counts as hesitation (spec 3.2).
 const SLOW_SECONDS: f64 = 12.0;
 const OPTIONS: usize = 4;
+/// How many of the most recent headwords to keep off the table.
+const RECENT: usize = 12;
+/// How many fresh words to draw on when the due queue runs dry. Wide enough
+/// that the choice below has something to choose from.
+const FRESH: usize = 40;
 
 /// How one option is tinted once the question has been answered.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -60,8 +67,11 @@ struct Question {
 #[derive(Default)]
 pub struct HomeState {
     question: Option<Question>,
-    /// Avoids asking about the same headword twice running.
-    last: Option<WordId>,
+    /// The last [`RECENT`] headwords asked.
+    ///
+    /// One word of history is not enough: with a short queue it guarantees a
+    /// ping-pong, A then B then A, which is exactly what this used to do.
+    recent: std::collections::VecDeque<WordId>,
     asked: u32,
     right: u32,
     /// Consecutive right answers, for a bit of momentum.
@@ -74,6 +84,14 @@ impl HomeState {
         self.question = None;
     }
 
+    /// Notes a headword as just asked.
+    fn remember(&mut self, word: WordId) {
+        self.recent.push_back(word);
+        while self.recent.len() > RECENT {
+            self.recent.pop_front();
+        }
+    }
+
     pub fn answered(&self) -> (u32, u32) {
         (self.right, self.asked)
     }
@@ -81,7 +99,7 @@ impl HomeState {
 
 pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
     if state.question.is_none() {
-        state.question = build(ctx, state.last);
+        state.question = build(ctx, &state.recent);
     }
     if state.question.is_none() {
         return nothing_to_ask(ui, ctx);
@@ -159,7 +177,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
     });
 
     if let Some((word, was_right)) = finished {
-        state.last = Some(word);
+        state.remember(word);
         state.asked += 1;
         state.right += u32::from(was_right);
         state.run = if was_right { state.run + 1 } else { 0 };
@@ -204,15 +222,29 @@ fn score_line(ui: &mut egui::Ui, run: u32) {
     });
 }
 
-/// Picks the next item: due first, then learning, then something new.
-fn build(ctx: &mut Ctx, skip: Option<WordId>) -> Option<Question> {
-    let mut tried = Vec::new();
-    for candidate in candidates(ctx) {
+/// Picks the next item: something due if there is one, otherwise a new word.
+///
+/// Two rules keep it from circling. Nothing asked in the last [`RECENT`] rounds
+/// is eligible, and the winner is drawn at random from those that are rather
+/// than always being the head of a stable list — a list that is rebuilt in the
+/// same order every round will hand back the same word every round.
+fn build(ctx: &mut Ctx, recent: &VecDeque<WordId>) -> Option<Question> {
+    let pool = candidates(ctx);
+    let fresh: Vec<SenseId> = pool
+        .iter()
+        .copied()
+        .filter(|id| !recent.contains(&ctx.dict.sense(*id).word))
+        .collect();
+    // If the history has swallowed everything — a tiny dictionary, or a very
+    // short queue — fall back to the full pool rather than showing nothing.
+    let mut choices = if fresh.is_empty() { pool } else { fresh };
+    if choices.is_empty() {
+        return None;
+    }
+
+    ctx.rng.shuffle(&mut choices);
+    for candidate in choices {
         let sense = ctx.dict.sense(candidate);
-        if Some(sense.word) == skip || tried.contains(&sense.word) {
-            continue;
-        }
-        tried.push(sense.word);
         if let Some(choice) = quiz::meaning_choice(ctx.dict, ctx.rng, &sense, OPTIONS) {
             return Some(Question {
                 sense: candidate,
@@ -225,34 +257,49 @@ fn build(ctx: &mut Ctx, skip: Option<WordId>) -> Option<Question> {
     None
 }
 
-/// Candidate items, best first.
+/// Everything worth asking about right now.
+///
+/// Due cards first and on their own: they are the ones with review value, and
+/// mixing new words in while something is overdue would waste the round. Only
+/// when nothing is due does this reach for new words.
+///
+/// What it deliberately does *not* include is every card in progress
+/// regardless of its due date. That was the loop: answering a word set its due
+/// date days out, and this list put it straight back at the front anyway.
 fn candidates(ctx: &mut Ctx) -> Vec<SenseId> {
-    let mut out = ctx.progress.due_cards(ctx.day);
-    // Then anything in progress, whether or not it is due yet.
-    out.extend(
-        ctx.progress
-            .cards()
-            .filter(|(_, c)| c.state.in_study())
-            .map(|(id, _)| id),
-    );
-    // Then new words from the feeding window, so the game keeps going once
-    // the queue is empty.
-    out.extend(study::suggest(ctx.dict, ctx.progress, 12));
-    // And finally anything at all, for a brand-new user with no frontier yet.
-    if out.is_empty() {
-        let span = ctx.dict.learn_count().min(3_000) as usize;
-        for _ in 0..24 {
-            let rank = 1 + ctx.rng.below(span) as u32;
-            if let Some(sense) = ctx.dict.at_rank(rank) {
-                out.push(sense.id);
-            }
+    let due: Vec<SenseId> = ctx
+        .progress
+        .due_cards(ctx.day)
+        .into_iter()
+        .filter(|id| ctx.dict.sense(*id).teachable())
+        .collect();
+    if !due.is_empty() {
+        return due;
+    }
+
+    let mut out: Vec<SenseId> = study::suggest(ctx.dict, ctx.progress, FRESH)
+        .into_iter()
+        .filter(|id| ctx.dict.sense(*id).teachable())
+        .collect();
+    if out.len() >= OPTIONS {
+        return out;
+    }
+
+    // Nothing placed and nothing suggested — a first run. Draw from the common
+    // end of the list so the first words a user meets are worth knowing.
+    let span = ctx.dict.learn_count().min(3_000) as usize;
+    for _ in 0..FRESH * 2 {
+        if out.len() >= FRESH {
+            break;
+        }
+        let rank = 1 + ctx.rng.below(span) as u32;
+        if let Some(sense) = ctx.dict.at_rank(rank)
+            && sense.teachable()
+            && !out.contains(&sense.id)
+        {
+            out.push(sense.id);
         }
     }
-    out.retain(|id| {
-        let sense = ctx.dict.sense(*id);
-        sense.teachable()
-    });
-    out.truncate(40);
     out
 }
 
@@ -320,6 +367,96 @@ mod tests {
         }
     }
 
+    /// Plays `rounds` questions the way the screen does — build, answer,
+    /// remember — and reports which headwords came up.
+    fn play(bench: &mut Bench, rounds: usize, correct: bool) -> Vec<&'static str> {
+        let mut state = HomeState::default();
+        let mut seen = Vec::new();
+        for _ in 0..rounds {
+            let mut ctx = bench.ctx();
+            let Some(mut question) = build(&mut ctx, &state.recent) else {
+                break;
+            };
+            let sense = ctx.dict.sense(question.sense);
+            seen.push(ctx.dict.word(sense.word).text);
+            let answer = question.choice.answer;
+            let picked = if correct {
+                answer
+            } else {
+                (answer + 1) % OPTIONS
+            };
+            grade(&mut ctx, &mut question, picked, 0.0);
+            state.remember(sense.word);
+        }
+        seen
+    }
+
+    #[test]
+    #[ignore = "diagnostic: cargo test -- --ignored --nocapture show_a_session"]
+    fn show_a_session() {
+        for (label, placed, correct) in [
+            ("placed at 2,000, all right", true, true),
+            ("placed at 2,000, all wrong", true, false),
+            ("brand-new user", false, true),
+        ] {
+            let mut bench = Bench::new();
+            if placed {
+                bench.progress.apply_placement(2_000, 7.6);
+            }
+            let seen = play(&mut bench, 24, correct);
+            let distinct: std::collections::BTreeSet<_> = seen.iter().collect();
+            println!("\n{label}: {} distinct of {}", distinct.len(), seen.len());
+            println!("  {}", seen.join(" "));
+        }
+    }
+
+    #[test]
+    fn it_does_not_loop_over_the_same_few_words() {
+        // The bug this test exists for: answering a word put it straight back
+        // at the front of the queue, so two words ping-ponged for ever.
+        let mut bench = Bench::new();
+        bench.progress.apply_placement(2_000, 7.6);
+        let seen = play(&mut bench, 30, true);
+        assert_eq!(seen.len(), 30, "ran out of questions");
+
+        let distinct: std::collections::BTreeSet<_> = seen.iter().collect();
+        assert!(
+            distinct.len() >= 20,
+            "only {} distinct words in 30 rounds: {:?}",
+            distinct.len(),
+            seen
+        );
+    }
+
+    #[test]
+    fn a_word_does_not_come_back_immediately_after_being_missed() {
+        // Getting one wrong must not pin it to the front of the queue either.
+        let mut bench = Bench::new();
+        bench.progress.apply_placement(1_200, 7.1);
+        let seen = play(&mut bench, 20, false);
+        let distinct: std::collections::BTreeSet<_> = seen.iter().collect();
+        assert!(
+            distinct.len() >= 12,
+            "only {} distinct after wrong answers: {:?}",
+            distinct.len(),
+            seen
+        );
+    }
+
+    #[test]
+    fn no_word_repeats_inside_the_recent_window() {
+        let mut bench = Bench::new();
+        bench.progress.apply_placement(3_000, 8.0);
+        let seen = play(&mut bench, 40, true);
+        for (i, word) in seen.iter().enumerate() {
+            let window = &seen[i.saturating_sub(RECENT)..i];
+            assert!(
+                !window.contains(word),
+                "{word} repeated within {RECENT}: {seen:?}"
+            );
+        }
+    }
+
     #[test]
     fn nothing_is_marked_before_an_answer() {
         for i in 0..OPTIONS {
@@ -353,7 +490,7 @@ mod tests {
         // a question on the very first frame.
         let mut bench = Bench::new();
         let mut ctx = bench.ctx();
-        let question = build(&mut ctx, None).expect("built a question");
+        let question = build(&mut ctx, &VecDeque::new()).expect("built a question");
         assert_eq!(question.choice.options.len(), OPTIONS);
         let sense = ctx.dict.sense(question.sense);
         assert_eq!(question.choice.options[question.choice.answer], sense.def);
@@ -368,18 +505,19 @@ mod tests {
         bench.progress.start_learning(due.id, Source::Manual, 90);
 
         let mut ctx = bench.ctx();
-        let question = build(&mut ctx, None).expect("built");
+        let question = build(&mut ctx, &VecDeque::new()).expect("built");
         assert_eq!(question.sense, due.id, "reached past the due card");
     }
 
     #[test]
-    fn the_same_word_is_not_asked_twice_running() {
+    fn a_remembered_word_is_not_offered_again() {
         let mut bench = Bench::new();
         bench.progress.apply_placement(1_500, 7.3);
         let mut ctx = bench.ctx();
-        let first = build(&mut ctx, None).expect("built");
+        let first = build(&mut ctx, &VecDeque::new()).expect("built");
         let word = ctx.dict.sense(first.sense).word;
-        let second = build(&mut ctx, Some(word)).expect("built again");
+        let recent = VecDeque::from(vec![word]);
+        let second = build(&mut ctx, &recent).expect("built again");
         assert_ne!(ctx.dict.sense(second.sense).word, word);
     }
 
@@ -405,7 +543,7 @@ mod tests {
             }
 
             let mut ctx = bench.ctx();
-            let mut question = build(&mut ctx, None).expect("built");
+            let mut question = build(&mut ctx, &VecDeque::new()).expect("built");
             question.sense = target.id;
             question.choice = quiz::meaning_choice(ctx.dict, ctx.rng, &target, OPTIONS).unwrap();
             let answer = question.choice.answer;
@@ -435,7 +573,7 @@ mod tests {
             .set_state(target.id, State::Known, Source::Manual, 90);
 
         let mut ctx = bench.ctx();
-        let mut question = build(&mut ctx, None).expect("built");
+        let mut question = build(&mut ctx, &VecDeque::new()).expect("built");
         question.sense = target.id;
         question.choice = quiz::meaning_choice(ctx.dict, ctx.rng, &target, OPTIONS).unwrap();
         let wrong = (question.choice.answer + 1) % OPTIONS;
@@ -450,7 +588,7 @@ mod tests {
         assert_eq!(bench.progress.state(&target), State::Unexplored);
 
         let mut ctx = bench.ctx();
-        let mut question = build(&mut ctx, None).expect("built");
+        let mut question = build(&mut ctx, &VecDeque::new()).expect("built");
         question.sense = target.id;
         question.choice = quiz::meaning_choice(ctx.dict, ctx.rng, &target, OPTIONS).unwrap();
         let answer = question.choice.answer;
@@ -467,7 +605,7 @@ mod tests {
         let mut bench = Bench::new();
         let target = bench.dict.at_rank(1_000).unwrap();
         let mut ctx = bench.ctx();
-        let mut question = build(&mut ctx, None).expect("built");
+        let mut question = build(&mut ctx, &VecDeque::new()).expect("built");
         question.sense = target.id;
         question.choice = quiz::meaning_choice(ctx.dict, ctx.rng, &target, OPTIONS).unwrap();
         let answer = question.choice.answer;

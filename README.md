@@ -53,7 +53,10 @@ saying what to.
 
 What it asks about is not random either. Anything already due comes first, so
 the quick game doubles as review; only when nothing is waiting does it reach
-into the Smart Feeding window for new words.
+into the Smart Feeding window for new words. Two rules stop it circling: the
+last dozen headwords are off the table, and the winner is drawn at random from
+those that remain rather than being the head of a list rebuilt in the same
+order every round.
 
 **Search (spec 1.1).** Four match tiers, ranked by
 `tier → edit distance → personal boost → frequency`, never alphabetically:
