@@ -43,14 +43,26 @@ pub enum Tab {
 }
 
 impl Tab {
-    const ALL: [Self; 4] = [Self::Lookup, Self::Study, Self::Map, Self::Profile];
+    /// Left-to-right order in the bar. Look up sits third, next to the thumb;
+    /// it is still where the app opens, which [`Tab::default`] decides.
+    const ALL: [Self; 4] = [Self::Study, Self::Map, Self::Lookup, Self::Profile];
 
+    /// Shown on hover, since the bar itself is icons.
     fn label(self) -> &'static str {
         match self {
             Self::Lookup => "Look up",
             Self::Study => "Study",
             Self::Map => "Map",
             Self::Profile => "You",
+        }
+    }
+
+    fn icon(self) -> ui::Icon {
+        match self {
+            Self::Lookup => ui::Icon::Search,
+            Self::Study => ui::Icon::Study,
+            Self::Map => ui::Icon::Map,
+            Self::Profile => ui::Icon::Person,
         }
     }
 }
@@ -294,19 +306,12 @@ impl WordTeeApp {
     fn show_tab_bar(&mut self, ui: &mut egui::Ui, goto: &mut Option<Tab>) {
         egui::Panel::bottom("tabs").show(ui, |ui| {
             ui.add_space(4.0);
+            let current = self.tab;
             ui.columns(Tab::ALL.len(), |columns| {
                 for (column, tab) in columns.iter_mut().zip(Tab::ALL) {
-                    column.vertical_centered_justified(|ui| {
-                        let selected = self.tab == tab;
-                        let text = RichText::new(tab.label()).size(14.0).color(if selected {
-                            ui::accent(ui)
-                        } else {
-                            ui::muted(ui)
-                        });
-                        if ui.selectable_label(selected, text).clicked() {
-                            *goto = Some(tab);
-                        }
-                    });
+                    if ui::tab_button(column, tab.icon(), current == tab, tab.label()).clicked() {
+                        *goto = Some(tab);
+                    }
                 }
             });
             ui.add_space(4.0);
@@ -574,6 +579,18 @@ mod tests {
                 assert_eq!(h.app.tab(), tab);
             }
         }
+    }
+
+    #[test]
+    fn the_bar_runs_study_map_lookup_you() {
+        assert_eq!(Tab::ALL, [Tab::Study, Tab::Map, Tab::Lookup, Tab::Profile]);
+        // Reordering the bar must not change where the app opens.
+        assert_eq!(Tab::default(), Tab::Lookup);
+        assert_eq!(Harness::new().app.tab(), Tab::Lookup);
+        // Every tab needs its own icon, or the bar is ambiguous.
+        let icons: std::collections::BTreeSet<_> =
+            Tab::ALL.iter().map(|t| format!("{:?}", t.icon())).collect();
+        assert_eq!(icons.len(), Tab::ALL.len());
     }
 
     #[test]

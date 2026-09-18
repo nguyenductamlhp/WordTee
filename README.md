@@ -10,13 +10,14 @@ server, no account and no network call at any point. The same Rust code runs as
 a native desktop binary, as an Android APK, and as WebAssembly in a browser.
 
 The interface is in English; the meanings are Vietnamese, which is what the
-dictionary holds.
+dictionary holds. The bottom bar is four icons — Study, Map, Look up, You —
+drawn rather than typed, for the reason in the next section.
 
 ```
 ┌────────────────────────────────┐
-│ WordTee                🔥 4 12 │
+│ WordTee            10 due · 1d │
 ├────────────────────────────────┤
-│ 🔍 swimming                    │
+│ swimming                       │
 ├────────────────────────────────┤
 │ swim  /ˈswɪm/   inflected form │
 │ “swimming” is the present      │
@@ -28,7 +29,7 @@ dictionary holds.
 ├────────────────────────────────┤
 │ [I know] [Quick test] [Learn]  │
 ├────────────────────────────────┤
-│ 🔍Look up 🎓Study 🗺Map 👤You  │
+│ (cap)  (grid)  (lens)  (bust)  │
 └────────────────────────────────┘
 ```
 
@@ -79,6 +80,13 @@ climb three levels as a card stabilises: recognise → recall → produce.
 
 **Map (spec 2.3).** 25 blocks of 1,000 items, each with the spec's four-colour
 bar. Inferred progress is hatched so it never reads as confirmed.
+
+**Icons.** The navigation bar's four icons are painted with egui's own shapes:
+a mortarboard, a grid of blocks that mirrors the knowledge map, a magnifier and
+a bust. Every character the bar tried before this came from a fallback font in a
+different typeface, and the map glyph existed in only the crudest of them.
+Shapes take about as many lines, always match the text colour beside them, and
+cannot go missing.
 
 **Themes.** Light by default, dark on request, switchable under **You →
 Settings** and saved with the rest of your progress. Colours are chosen per

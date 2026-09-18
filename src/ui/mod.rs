@@ -266,6 +266,111 @@ fn hatch(painter: &egui::Painter, rect: egui::Rect) {
 }
 
 // -------------------------------------------------------------------------
+// the bottom bar's icons
+// -------------------------------------------------------------------------
+
+/// The four icons in the navigation bar.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Icon {
+    Search,
+    Study,
+    Map,
+    Person,
+}
+
+/// Paints `icon` to fill `rect`.
+///
+/// Drawn rather than typed. Every character the bar tried — 🔍, 🎓, 🗺, 👤 —
+/// came from a fallback font in a different typeface, and the map glyph existed
+/// in only the crudest of them. Shapes take about as many lines, always match
+/// the text colour beside them, scale to any size, and cannot go missing.
+pub fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: Color32) {
+    // Everything below is expressed in a unit square and mapped onto `rect`,
+    // so the shapes stay in proportion at any size.
+    let at = |x: f32, y: f32| rect.min + egui::vec2(rect.width() * x, rect.height() * y);
+    let unit = rect.width().min(rect.height());
+    let line = egui::Stroke::new((unit * 0.09).max(1.5), color);
+
+    match icon {
+        Icon::Search => {
+            painter.circle_stroke(at(0.42, 0.42), unit * 0.27, line);
+            painter.line_segment([at(0.63, 0.63), at(0.88, 0.88)], line);
+        }
+        Icon::Study => {
+            // A mortarboard: the flat top, then the cap under it and a tassel.
+            painter.add(egui::Shape::convex_polygon(
+                vec![at(0.5, 0.14), at(0.97, 0.38), at(0.5, 0.62), at(0.03, 0.38)],
+                color,
+                egui::Stroke::NONE,
+            ));
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    at(0.24, 0.50),
+                    at(0.76, 0.50),
+                    at(0.76, 0.72),
+                    at(0.24, 0.72),
+                ],
+                color,
+                egui::Stroke::NONE,
+            ));
+            painter.line_segment([at(0.90, 0.42), at(0.90, 0.78)], line);
+        }
+        Icon::Map => {
+            // The knowledge map is a grid of blocks, so the icon is one too.
+            let (cell, gap) = (0.26, 0.11);
+            for row in 0..3 {
+                for col in 0..3 {
+                    let x = 0.06 + col as f32 * (cell + gap);
+                    let y = 0.06 + row as f32 * (cell + gap);
+                    let square = egui::Rect::from_min_max(at(x, y), at(x + cell, y + cell));
+                    // The filled diagonal keeps it from reading as a plain
+                    // grid, and echoes the map's own part-filled bars.
+                    if (row + col) % 2 == 0 {
+                        painter.rect_filled(square, unit * 0.04, color);
+                    } else {
+                        painter.rect_stroke(
+                            square,
+                            unit * 0.04,
+                            egui::Stroke::new((unit * 0.06).max(1.0), color),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                }
+            }
+        }
+        Icon::Person => {
+            painter.circle_filled(at(0.5, 0.28), unit * 0.185, color);
+            // Shoulders: a rounded slab, clipped flat at the bottom.
+            painter.rect_filled(
+                egui::Rect::from_min_max(at(0.18, 0.60), at(0.82, 0.94)),
+                unit * 0.30,
+                color,
+            );
+        }
+    }
+}
+
+/// One icon-only tab, filling its column.
+pub fn tab_button(ui: &mut egui::Ui, icon: Icon, selected: bool, label: &str) -> egui::Response {
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 40.0), egui::Sense::click());
+    let color = if selected { accent(ui) } else { muted(ui) };
+    if selected {
+        let fill = toward_background(ui, color, 0.20);
+        ui.painter().rect_filled(rect, 9.0, fill);
+    }
+    let side = 24.0;
+    paint_icon(
+        ui.painter(),
+        egui::Rect::from_center_size(rect.center(), egui::vec2(side, side)),
+        icon,
+        color,
+    );
+    // The bar carries no text, so the name lives in the tooltip.
+    response.on_hover_text(label)
+}
+
+// -------------------------------------------------------------------------
 // text to speech (spec 1.4)
 // -------------------------------------------------------------------------
 
@@ -326,6 +431,22 @@ mod tests {
         assert_eq!(thousands(1_000), "1,000");
         assert_eq!(thousands(25_000), "25,000");
         assert_eq!(thousands(119_296), "119,296");
+    }
+
+    #[test]
+    fn icons_paint_at_any_size() {
+        // The bar draws these at 24 px, but a degenerate rect must not panic
+        // and the shapes are all expressed as fractions of the side.
+        let ctx = egui::Context::default();
+        ctx.run_ui(Default::default(), |ui| {
+            for side in [0.0f32, 1.0, 8.0, 24.0, 96.0] {
+                let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(side, side));
+                for icon in [Icon::Search, Icon::Study, Icon::Map, Icon::Person] {
+                    paint_icon(ui.painter(), rect, icon, Color32::WHITE);
+                }
+            }
+        })
+        .drop_without_applying_deltas();
     }
 
     #[test]
