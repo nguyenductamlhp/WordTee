@@ -128,7 +128,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
         ui.add_space(8.0);
         ui.vertical_centered(|ui| {
             ui.label(
-                RichText::new(format!("🔥 {}", ctx.progress.streak))
+                RichText::new(format!("{}", ctx.progress.streak))
                     .size(30.0)
                     .strong(),
             );
@@ -139,13 +139,13 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                     format!("day streak · best {}", ctx.progress.best_streak)
                 })
                 .size(12.5)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
             );
         });
         ui.add_space(10.0);
 
         if !ctx.progress.placement_done {
-            ui::card(ui, Some(ui::ACCENT), |ui| {
+            ui::card(ui, Some(ui::accent(ui)), |ui| {
                 ui.label(RichText::new("We don't know your level yet").strong());
                 ui.label(
                     RichText::new(
@@ -154,10 +154,10 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                          the right level.",
                     )
                     .size(13.0)
-                    .color(ui::MUTED),
+                    .color(ui::muted(ui)),
                 );
                 ui.add_space(6.0);
-                if ui::wide_button(ui, "Take the placement test", ui::ACCENT).clicked() {
+                if ui::wide_button(ui, "Take the placement test", ui::accent(ui)).clicked() {
                     *ctx.goto = Some(crate::app::Tab::Profile);
                 }
             });
@@ -168,10 +168,10 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
             ui.label(RichText::new("Today's session").size(17.0).strong());
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                ui::chip(ui, &format!("{due} to review"), ui::C_LEARNING);
-                ui::chip(ui, &format!("{new} new"), ui::ACCENT);
+                ui::chip(ui, &format!("{due} to review"), ui::c_learning(ui));
+                ui::chip(ui, &format!("{new} new"), ui::accent(ui));
                 if checks > 0 {
-                    ui::chip(ui, &format!("{checks} spot-checks"), ui::MUTED);
+                    ui::chip(ui, &format!("{checks} spot-checks"), ui::muted(ui));
                 }
             });
             ui.add_space(4.0);
@@ -181,7 +181,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                     ctx.progress.daily_goal, ctx.progress.new_today, ctx.progress.reviews_today
                 ))
                 .size(12.0)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
             );
 
             // Spec 3.6: the debt notice when reviews have piled up.
@@ -189,18 +189,18 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new(format!(
-                        "⚠ Reviews have piled up past {BACKLOG_FACTOR}× the daily goal. \
+                        "Heads up: reviews have piled up past {BACKLOG_FACTOR}× the daily goal. \
                          New words are paused — work the backlog down over the next \
                          few days."
                     ))
                     .size(12.5)
-                    .color(ui::WARN),
+                    .color(ui::warn(ui)),
                 );
             }
             ui.add_space(8.0);
             let enabled = due + new + checks > 0;
             ui.add_enabled_ui(enabled, |ui| {
-                if ui::wide_button(ui, "Start studying", ui::ACCENT).clicked() {
+                if ui::wide_button(ui, "Start studying", ui::accent(ui)).clicked() {
                     state.session = Some(Session::build(ctx.dict, ctx.progress, ctx.day));
                     state.mode = Mode::Session;
                     state.active = None;
@@ -213,7 +213,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                 ui.label(
                     RichText::new("All done. Come back tomorrow, or run a quick scan below.")
                         .size(12.5)
-                        .color(ui::MUTED),
+                        .color(ui::muted(ui)),
                 );
             }
         });
@@ -230,11 +230,11 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                      to find the everyday gaps a placement test misses.",
                 )
                 .size(12.5)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
             );
             ui.add_space(6.0);
             ui.add_enabled_ui(scan_left > 0 && ctx.progress.frontier > 1, |ui| {
-                if ui::wide_button(ui, &format!("Quick scan ({scan_left} cards)"), ui::WARN)
+                if ui::wide_button(ui, &format!("Quick scan ({scan_left} cards)"), ui::warn(ui))
                     .clicked()
                 {
                     state.scan =
@@ -246,7 +246,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                 ui.label(
                     RichText::new("Take the placement test first.")
                         .size(12.0)
-                        .color(ui::MUTED),
+                        .color(ui::muted(ui)),
                 );
             }
         });
@@ -271,7 +271,7 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
     egui::Panel::top("session-header").show(ui, |ui| {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            if ui.small_button("✕").clicked() {
+            if ui.small_button("×").clicked() {
                 state.mode = Mode::Idle;
                 state.session = None;
                 state.active = None;
@@ -279,13 +279,13 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
             ui.add(
                 egui::ProgressBar::new(done as f32 / total.max(1) as f32)
                     .desired_height(8.0)
-                    .fill(ui::ACCENT),
+                    .fill(ui::accent(ui)),
             );
         });
         ui.label(
             RichText::new(format!("{done}/{total}"))
                 .size(11.5)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
         );
         ui.add_space(4.0);
     });
@@ -322,7 +322,7 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(6.0);
         if let Task::Verify(_) = task {
-            ui::chip(ui, "Checking a word you marked as known", ui::MUTED);
+            ui::chip(ui, "Checking a word you marked as known", ui::muted(ui));
             ui.add_space(4.0);
         }
 
@@ -330,13 +330,13 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
         match &active.exercise {
             // Spec 3.3 level 1, first sight: show the whole card.
             Exercise::Study => {
-                ui::card(ui, Some(ui::ACCENT), |ui| {
+                ui::card(ui, Some(ui::accent(ui)), |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(word.text).size(26.0).strong());
                         ui::speak_buttons(ui, word.text);
                     });
                     if !word.ipa.is_empty() {
-                        ui.label(RichText::new(word.ipa).size(14.0).color(ui::ACCENT));
+                        ui.label(RichText::new(word.ipa).size(14.0).color(ui::accent(ui)));
                     }
                     ui.horizontal_wrapped(|ui| {
                         ui::pos_chip(ui, sense.pos);
@@ -349,12 +349,13 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                             RichText::new(sense.example)
                                 .size(13.5)
                                 .italics()
-                                .color(ui::MUTED),
+                                .color(ui::muted(ui)),
                         );
                         ctx.shown.mark(sense.id);
                     }
                 });
                 ui.add_space(10.0);
+                let accent = ui::accent(ui);
                 ui.columns(2, |c| {
                     if c[0]
                         .add_sized(
@@ -368,7 +369,7 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                         answer = Some(true);
                     }
                     let learn =
-                        egui::Button::new(RichText::new("Learn this").color(ui::ACCENT).strong());
+                        egui::Button::new(RichText::new("Learn this").color(accent).strong());
                     if c[1]
                         .add_sized([c[1].available_width(), 42.0], learn)
                         .clicked()
@@ -437,7 +438,7 @@ fn question(
 ) -> Option<bool> {
     if let Some(gap) = gap {
         ui::card(ui, None, |ui| {
-            ui.label(RichText::new(prompt).size(13.0).color(ui::MUTED));
+            ui.label(RichText::new(prompt).size(13.0).color(ui::muted(ui)));
             ui.add_space(4.0);
             ui.label(
                 RichText::new(format!("{}{}{}", gap.before, gap.blank(), gap.after)).size(17.0),
@@ -450,7 +451,7 @@ fn question(
                 .hint_text(format!("starts with “{}”", gap.hint)),
         );
         ui.add_space(6.0);
-        if ui::wide_button(ui, "Answer", ui::ACCENT).clicked() {
+        if ui::wide_button(ui, "Answer", ui::accent(ui)).clicked() {
             active.hesitated |= ctx.now - active.started > SLOW_SECONDS;
             return Some(gap.accepts(&active.typed));
         }
@@ -462,15 +463,19 @@ fn question(
         ui.label(RichText::new(prompt).size(17.0).strong());
         if !choice.prompt.is_empty() && !prompt.contains(&choice.prompt) {
             ui.add_space(3.0);
-            ui.label(RichText::new(&choice.prompt).size(14.5).color(ui::MUTED));
+            ui.label(
+                RichText::new(&choice.prompt)
+                    .size(14.5)
+                    .color(ui::muted(ui)),
+            );
         }
     });
     ui.add_space(8.0);
     for (i, option) in choice.options.iter().enumerate() {
         let color = match active.picked {
-            Some(_) if i == choice.answer => ui::GOOD,
-            Some(p) if p == i => ui::BAD,
-            Some(_) => ui::MUTED,
+            Some(_) if i == choice.answer => ui::good(ui),
+            Some(p) if p == i => ui::bad(ui),
+            Some(_) => ui::muted(ui),
             None => ui.visuals().text_color(),
         };
         if ui::wide_button(ui, option, color).clicked() && active.picked.is_none() {
@@ -481,7 +486,7 @@ fn question(
     }
     let picked = active.picked?;
     ui.add_space(6.0);
-    if ui::wide_button(ui, "Continue", ui::ACCENT).clicked() {
+    if ui::wide_button(ui, "Continue", ui::accent(ui)).clicked() {
         return Some(picked == choice.answer);
     }
     None
@@ -498,7 +503,7 @@ fn spell_question(
         ui.label(
             RichText::new("Write the word for this meaning:")
                 .size(13.0)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
         );
         ui.add_space(4.0);
         ui.label(RichText::new(sense.def).size(17.0));
@@ -522,12 +527,12 @@ fn spell_question(
                     word.chars().next().unwrap_or('?')
                 ))
                 .size(12.5)
-                .color(ui::WARN),
+                .color(ui::warn(ui)),
             );
         }
     });
     ui.add_space(6.0);
-    if ui::wide_button(ui, "Answer", ui::ACCENT).clicked() {
+    if ui::wide_button(ui, "Answer", ui::accent(ui)).clicked() {
         active.hesitated |= ctx.now - active.started > SLOW_SECONDS;
         return Some(study::spelling_accepts(ctx.dict, sense, &active.typed));
     }
@@ -604,16 +609,15 @@ fn summary(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
     }
     ui.add_space(24.0);
     ui.vertical_centered(|ui| {
-        ui.label(RichText::new("✅").size(44.0));
-        ui.label(RichText::new("Session complete").size(20.0).strong());
+        ui.label(RichText::new("Session complete").size(22.0).strong());
         ui.add_space(6.0);
         let rate = (state.right * 100).checked_div(state.answered).unwrap_or(0);
         ui.label(
             RichText::new(format!("{} questions · {rate}% correct", state.answered))
                 .size(13.0)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
         );
-        ui.label(RichText::new(format!("🔥 {} day streak", ctx.progress.streak)).size(14.0));
+        ui.label(RichText::new(format!("{} day streak", ctx.progress.streak)).size(14.0));
         ui.add_space(14.0);
         if ui.button("Back to Study").clicked() {
             state.mode = Mode::Idle;
@@ -631,7 +635,7 @@ fn scan_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
     egui::Panel::top("scan-header").show(ui, |ui| {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            if ui.small_button("✕").clicked() {
+            if ui.small_button("×").clicked() {
                 state.mode = Mode::Idle;
                 state.scan.clear();
             }
@@ -640,7 +644,7 @@ fn scan_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                 ui.label(
                     RichText::new(format!("{} left", state.scan.len()))
                         .size(12.5)
-                        .color(ui::MUTED),
+                        .color(ui::muted(ui)),
                 );
             });
         });
@@ -664,7 +668,7 @@ fn scan_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
     ui.label(
         RichText::new("Do you know this word?")
             .size(14.0)
-            .color(ui::MUTED),
+            .color(ui::muted(ui)),
     );
     ui.add_space(6.0);
     if super::map::scan_card(ui, ctx, sense) {

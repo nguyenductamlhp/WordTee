@@ -69,7 +69,7 @@ fn overview(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
             BLOCKS
         ))
         .size(12.5)
-        .color(ui::MUTED),
+        .color(ui::muted(ui)),
     );
     ui.add_space(6.0);
     legend(ui);
@@ -78,7 +78,7 @@ fn overview(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
             ui.label(
                 RichText::new(format!("{} {}", band.label(), band.range()))
                     .size(11.0)
-                    .color(ui::MUTED),
+                    .color(ui::muted(ui)),
             );
             ui.add_space(4.0);
         }
@@ -96,32 +96,36 @@ fn overview(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
                 + counts[State::AssumedKnown as usize];
             let total: u32 = counts.iter().sum();
 
-            let response = ui::card(ui, (block == frontier_block).then_some(ui::ACCENT), |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(
-                        RichText::new(format!(
-                            "{} – {}",
-                            ui::thousands(start),
-                            ui::thousands(start + BLOCK - 1)
-                        ))
-                        .strong(),
-                    );
-                    ui::chip(ui, band.label(), ui::MUTED);
-                    if block == frontier_block {
-                        ui::chip(ui, "you are here", ui::ACCENT);
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let percent = (known * 100).checked_div(total).unwrap_or(0);
+            let response = ui::card(
+                ui,
+                (block == frontier_block).then_some(ui::accent(ui)),
+                |ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label(
-                            RichText::new(format!("{percent}%"))
-                                .size(13.0)
-                                .color(ui::MUTED),
+                            RichText::new(format!(
+                                "{} – {}",
+                                ui::thousands(start),
+                                ui::thousands(start + BLOCK - 1)
+                            ))
+                            .strong(),
                         );
+                        ui::chip(ui, band.label(), ui::muted(ui));
+                        if block == frontier_block {
+                            ui::chip(ui, "you are here", ui::accent(ui));
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let percent = (known * 100).checked_div(total).unwrap_or(0);
+                            ui.label(
+                                RichText::new(format!("{percent}%"))
+                                    .size(13.0)
+                                    .color(ui::muted(ui)),
+                            );
+                        });
                     });
-                });
-                ui.add_space(3.0);
-                ui::progress_bar(ui, counts, 12.0);
-            });
+                    ui.add_space(3.0);
+                    ui::progress_bar(ui, counts, 12.0);
+                },
+            );
             if ui::card_clicked(ui, &response) {
                 state.open = Some(block);
                 state.filter = None;
@@ -135,14 +139,14 @@ fn overview(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
 fn legend(ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         for (color, text) in [
-            (ui::C_KNOWN, "Known / Mastered"),
-            (ui::C_ASSUMED, "Inferred (hatched)"),
-            (ui::C_LEARNING, "Learning / reviewing"),
-            (ui::C_UNEXPLORED, "New"),
+            (ui::c_known(ui), "Known / Mastered"),
+            (ui::c_assumed(ui), "Inferred (hatched)"),
+            (ui::c_learning(ui), "Learning / reviewing"),
+            (ui::c_unexplored(ui), "New"),
         ] {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(11.0, 11.0), egui::Sense::hover());
             ui.painter().rect_filled(rect, 2.0, color);
-            ui.label(RichText::new(text).size(11.5).color(ui::MUTED));
+            ui.label(RichText::new(text).size(11.5).color(ui::muted(ui)));
             ui.add_space(4.0);
         }
     });
@@ -155,7 +159,7 @@ fn block_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState, block: u32
     egui::Panel::top("block-header").show(ui, |ui| {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            if ui.button("←").clicked() {
+            if ui.button("‹").clicked() {
                 state.open = None;
             }
             ui.label(
@@ -187,7 +191,7 @@ fn block_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState, block: u32
                 }
             }
         });
-        if ui.button("⚡ Quick scan this block").clicked() {
+        if ui.button("Quick scan this block").clicked() {
             *ctx.goto = Some(Tab::Study);
             ctx.say("Open the Study tab to run a quick scan.");
         }
@@ -222,13 +226,13 @@ fn block_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState, block: u32
                     ui.label(
                         RichText::new(format!("#{}", ui::thousands(rank)))
                             .size(11.5)
-                            .color(ui::MUTED),
+                            .color(ui::muted(ui)),
                     );
                     ui.label(RichText::new(word.text).size(15.5).strong());
                     ui::pos_chip(ui, sense.pos);
                     ui::state_chip(ui, current);
                 });
-                ui.label(RichText::new(sense.def).size(13.0).color(ui::MUTED));
+                ui.label(RichText::new(sense.def).size(13.0).color(ui::muted(ui)));
             });
             if ui::card_clicked(ui, &response) {
                 open_word = Some(sense.word);
@@ -238,13 +242,13 @@ fn block_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState, block: u32
         if shown == 0 {
             ui.add_space(16.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Nothing in this state.").color(ui::MUTED));
+                ui.label(RichText::new("Nothing in this state.").color(ui::muted(ui)));
             });
         } else if shown >= PAGE {
             ui.label(
                 RichText::new(format!("Showing the first {PAGE} items."))
                     .size(12.0)
-                    .color(ui::MUTED),
+                    .color(ui::muted(ui)),
             );
         }
         if let Some(word) = open_word {
@@ -260,12 +264,12 @@ pub fn scan_card(ui: &mut egui::Ui, ctx: &mut Ctx, sense: SenseId) -> bool {
     let word = ctx.dict.word(sense.word);
     let mut answered = false;
 
-    ui::card(ui, Some(ui::ACCENT), |ui| {
+    ui::card(ui, Some(ui::accent(ui)), |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(6.0);
             ui.label(RichText::new(word.text).size(30.0).strong());
             if !word.ipa.is_empty() {
-                ui.label(RichText::new(word.ipa).size(14.0).color(ui::ACCENT));
+                ui.label(RichText::new(word.ipa).size(14.0).color(ui::accent(ui)));
             }
             ui.horizontal(|ui| {
                 ui::pos_chip(ui, sense.pos);
@@ -275,11 +279,12 @@ pub fn scan_card(ui: &mut egui::Ui, ctx: &mut Ctx, sense: SenseId) -> bool {
         });
     });
     ui.add_space(10.0);
+    let (warn, good) = (ui::warn(ui), ui::good(ui));
     ui.columns(2, |c| {
         if c[0]
             .add_sized(
                 [c[0].available_width(), 46.0],
-                egui::Button::new(RichText::new("Don't know").color(ui::WARN)),
+                egui::Button::new(RichText::new("Don't know").color(warn)),
             )
             .clicked()
         {
@@ -291,7 +296,7 @@ pub fn scan_card(ui: &mut egui::Ui, ctx: &mut Ctx, sense: SenseId) -> bool {
         if c[1]
             .add_sized(
                 [c[1].available_width(), 46.0],
-                egui::Button::new(RichText::new("Known").color(ui::GOOD)),
+                egui::Button::new(RichText::new("Known").color(good)),
             )
             .clicked()
         {
@@ -311,7 +316,7 @@ pub fn scan_card(ui: &mut egui::Ui, ctx: &mut Ctx, sense: SenseId) -> bool {
                 RichText::new(sense.example)
                     .size(13.0)
                     .italics()
-                    .color(ui::MUTED),
+                    .color(ui::muted(ui)),
             );
         }
     });

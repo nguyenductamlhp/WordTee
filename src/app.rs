@@ -4,7 +4,7 @@
 use eframe::egui::{self, RichText};
 
 use crate::dict::{Dict, WordId};
-use crate::progress::{self, Day, Progress, Undo};
+use crate::progress::{self, Day, Progress, Theme, Undo};
 use crate::quiz::Shown;
 use crate::rng::Rng;
 use crate::ui;
@@ -47,10 +47,10 @@ impl Tab {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Lookup => "🔍 Look up",
-            Self::Study => "🎓 Study",
-            Self::Map => "🗺 Map",
-            Self::Profile => "👤 You",
+            Self::Lookup => "Look up",
+            Self::Study => "Study",
+            Self::Map => "Map",
+            Self::Profile => "You",
         }
     }
 }
@@ -153,7 +153,7 @@ impl WordTeeApp {
     /// up without an [`eframe::CreationContext`].
     pub fn configure_style(ctx: &egui::Context) {
         Self::install_font(ctx);
-        ctx.set_theme(egui::ThemePreference::Dark);
+        Self::apply_theme(ctx, Theme::default());
         ctx.all_styles_mut(|style| {
             // The default sizes are tuned for a mouse pointer and read small
             // under a fingertip.
@@ -162,7 +162,20 @@ impl WordTeeApp {
             }
             style.spacing.button_padding = egui::vec2(10.0, 6.0);
             style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-            style.visuals.selection.bg_fill = ui::ACCENT.gamma_multiply(0.35);
+            let accent = if style.visuals.dark_mode {
+                egui::Color32::from_rgb(0x4d, 0xb6, 0xf5)
+            } else {
+                egui::Color32::from_rgb(0x0b, 0x6f, 0xc2)
+            };
+            style.visuals.selection.bg_fill = accent.gamma_multiply(0.35);
+        });
+    }
+
+    /// Switches the colour scheme.
+    fn apply_theme(ctx: &egui::Context, theme: Theme) {
+        ctx.set_theme(match theme {
+            Theme::Light => egui::ThemePreference::Light,
+            Theme::Dark => egui::ThemePreference::Dark,
         });
     }
 
@@ -218,21 +231,29 @@ impl WordTeeApp {
             self.study.reset();
         }
 
+        // The setting rides along with the saved progress, so this is also what
+        // restores the chosen theme on the first frame after a restart.
+        let wants_dark = self.progress.theme == Theme::Dark;
+        if ui.visuals().dark_mode != wants_dark {
+            Self::apply_theme(ui.ctx(), self.progress.theme);
+        }
+
         let mut goto = None;
         let mut open_word = None;
 
         egui::Panel::top("chrome").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(2.0);
-                ui.label(RichText::new(APP_NAME).strong().color(ui::ACCENT));
+                ui.label(RichText::new(APP_NAME).strong().color(ui::accent(ui)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(2.0);
                     if self.progress.streak > 0 {
-                        ui.label(RichText::new(format!("🔥 {}", self.progress.streak)).size(13.0));
+                        let color = ui::good(ui);
+                        ui::chip(ui, &format!("{}d streak", self.progress.streak), color);
                     }
                     let (due, new, _) = self.study.pending(&self.dict, &self.progress, self.day);
                     if due + new > 0 {
-                        ui::chip(ui, &format!("{} due", due + new), ui::WARN);
+                        ui::chip(ui, &format!("{} due", due + new), ui::warn(ui));
                     }
                 });
             });
@@ -277,10 +298,10 @@ impl WordTeeApp {
                 for (column, tab) in columns.iter_mut().zip(Tab::ALL) {
                     column.vertical_centered_justified(|ui| {
                         let selected = self.tab == tab;
-                        let text = RichText::new(tab.label()).size(13.0).color(if selected {
-                            ui::ACCENT
+                        let text = RichText::new(tab.label()).size(14.0).color(if selected {
+                            ui::accent(ui)
                         } else {
-                            ui::MUTED
+                            ui::muted(ui)
                         });
                         if ui.selectable_label(selected, text).clicked() {
                             *goto = Some(tab);
@@ -310,7 +331,7 @@ impl WordTeeApp {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(&message).size(13.0));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("✕").clicked() {
+                    if ui.small_button("×").clicked() {
                         dismiss = true;
                     }
                     if undoable {
@@ -482,13 +503,101 @@ mod tests {
         );
     }
 
-    #[test]
-    fn every_tab_renders() {
-        let mut h = Harness::new();
-        for tab in Tab::ALL {
-            h.on(tab);
-            assert_eq!(h.app.tab(), tab);
+    /// The app's own string literals, from the sources that hold UI text.
+    ///
+    /// Read out of the source rather than listed by hand, so a new label is
+    /// covered the moment it is written.
+    fn characters_in_the_interface() -> std::collections::BTreeSet<char> {
+        const SOURCES: [&str; 9] = [
+            include_str!("app.rs"),
+            include_str!("dict.rs"),
+            include_str!("progress.rs"),
+            include_str!("search.rs"),
+            include_str!("ui/mod.rs"),
+            include_str!("ui/lookup.rs"),
+            include_str!("ui/study.rs"),
+            include_str!("ui/map.rs"),
+            include_str!("ui/profile.rs"),
+        ];
+        let mut seen = std::collections::BTreeSet::new();
+        for source in SOURCES {
+            for line in source.lines() {
+                // Prose in a doc comment is never drawn, and several of them
+                // quote the spec's own arrows.
+                if line.trim_start().starts_with("//") {
+                    continue;
+                }
+                let mut in_string = false;
+                let mut escaped = false;
+                for c in line.chars() {
+                    match c {
+                        _ if escaped => escaped = false,
+                        '\\' if in_string => escaped = true,
+                        '"' => in_string = !in_string,
+                        _ if in_string && !c.is_ascii() => {
+                            seen.insert(c);
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
+        seen
+    }
+
+    #[test]
+    fn the_bundled_font_covers_the_interface() {
+        // The dictionary test below checks the *content*. This checks the app's
+        // own labels, which is where the second round of empty boxes came from:
+        // `←`, `→` and `✕` are in no bundled font, and the tab bar's emoji came
+        // from a fallback in a different typeface. Everything the interface
+        // draws now has to be in the one font.
+        let face = ttf_parser::Face::parse(UI_FONT, 0).expect("the bundled font parses");
+        let missing: Vec<char> = characters_in_the_interface()
+            .into_iter()
+            .filter(|c| face.glyph_index(*c).is_none())
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "no glyph for {missing:?} — pick characters the bundled font has, \
+             or spell the label out in words"
+        );
+    }
+
+    #[test]
+    fn every_tab_renders_in_both_themes() {
+        let mut h = Harness::new();
+        for theme in [Theme::Light, Theme::Dark] {
+            h.app.progress.theme = theme;
+            for tab in Tab::ALL {
+                h.on(tab);
+                assert_eq!(h.app.tab(), tab);
+            }
+        }
+    }
+
+    #[test]
+    fn the_app_starts_light() {
+        let h = Harness::new();
+        assert_eq!(h.app.progress.theme, Theme::Light);
+        assert_eq!(h.ctx.theme(), egui::Theme::Light, "first frame drew dark");
+    }
+
+    #[test]
+    fn switching_the_theme_takes_effect_and_is_saved() {
+        let mut h = Harness::new();
+        h.app.progress.theme = Theme::Dark;
+        h.settle();
+        assert_eq!(h.ctx.theme(), egui::Theme::Dark);
+
+        // The choice rides along with the rest of the saved progress.
+        let text = ron::to_string(&h.app.progress).expect("serialises");
+        let back: Progress = ron::from_str(&text).expect("deserialises");
+        assert_eq!(back.theme, Theme::Dark);
+
+        h.app.progress.theme = Theme::Light;
+        h.settle();
+        assert_eq!(h.ctx.theme(), egui::Theme::Light);
     }
 
     #[test]

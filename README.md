@@ -80,6 +80,10 @@ climb three levels as a card stabilises: recognise → recall → produce.
 **Map (spec 2.3).** 25 blocks of 1,000 items, each with the spec's four-colour
 bar. Inferred progress is hatched so it never reads as confirmed.
 
+**Themes.** Light by default, dark on request, switchable under **You →
+Settings** and saved with the rest of your progress. Colours are chosen per
+theme rather than shared: a blue legible on near-black washes out on white.
+
 ## The dictionary
 
 `scripts/build-dict.py` downloads two freely-licensed sources and compiles them
@@ -93,8 +97,14 @@ into one file, `assets/wordtee.dict`:
 The app also bundles [Noto Sans](https://fonts.google.com/noto) (OFL 1.1, in
 `assets/fonts/`). egui's own font covers only 89% of what this app draws: it has
 neither the Vietnamese tone marks of Latin Extended Additional nor the IPA, so
-`ừ`, `ế`, `ə` and `ɪ` all rendered as empty boxes. Noto Sans covers 99,99% of
-the pack, and a test asserts it stays that way.
+`ừ`, `ế`, `ə` and `ɪ` all rendered as empty boxes.
+
+**Everything the app draws comes from that one font**, and two tests hold the
+line — one over every character in the dictionary, one over the app's own
+labels, read straight out of the source. The second exists because the first
+was not enough: the back arrow `←`, the close `✕` and the tab bar's emoji are
+in no bundled font either, and the emoji that did resolve came from a fallback
+in a different typeface. They are all words or in-font characters now.
 
 ```sh
 python3 scripts/build-dict.py        # ~19 MB out, a few minutes the first time

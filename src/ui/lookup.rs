@@ -130,11 +130,11 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
     if state.results.is_empty() {
         ui.add_space(24.0);
         ui.vertical_centered(|ui| {
-            ui.label(RichText::new("Nothing found.").color(ui::MUTED));
+            ui.label(RichText::new("Nothing found.").color(ui::muted(ui)));
             ui.label(
                 RichText::new("Try it without tone marks, or check the spelling.")
                     .size(12.0)
-                    .color(ui::MUTED),
+                    .color(ui::muted(ui)),
             );
         });
         return;
@@ -148,13 +148,13 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(word.text).size(17.0).strong());
                     if !word.ipa.is_empty() {
-                        ui.label(RichText::new(word.ipa).size(13.0).color(ui::MUTED));
+                        ui.label(RichText::new(word.ipa).size(13.0).color(ui::muted(ui)));
                     }
                     if word.kind == Kind::Phrase {
-                        ui::chip(ui, "phrase", ui::ACCENT);
+                        ui::chip(ui, "phrase", ui::accent(ui));
                     }
                     if hit.tier != Tier::Exact {
-                        ui::chip(ui, hit.tier.label(), ui::MUTED);
+                        ui::chip(ui, hit.tier.label(), ui::muted(ui));
                     }
                 });
                 // Spec 1.1: a lemma reached through an inflected form says so.
@@ -165,7 +165,7 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
                             form.surface, form.tag
                         ))
                         .size(12.0)
-                        .color(ui::ACCENT),
+                        .color(ui::accent(ui)),
                     );
                 }
                 let gloss: Vec<&str> = word
@@ -176,7 +176,11 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
                     .take(2)
                     .collect();
                 if !gloss.is_empty() {
-                    ui.label(RichText::new(gloss.join(" · ")).size(13.5).color(ui::MUTED));
+                    ui.label(
+                        RichText::new(gloss.join(" · "))
+                            .size(13.5)
+                            .color(ui::muted(ui)),
+                    );
                 }
             });
             if ui::card_clicked(ui, &response) {
@@ -187,7 +191,7 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
 
         // Spec 5.2: the Vietnamese → English direction.
         if !state.results.reverse.is_empty() {
-            ui::section(ui, "Vietnamese → English", |ui| {
+            ui::section(ui, "Vietnamese to English", |ui| {
                 for &id in &state.results.reverse {
                     let sense = ctx.dict.sense(id);
                     let word = ctx.dict.word(sense.word);
@@ -197,7 +201,7 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
                             ui::pos_chip(ui, sense.pos);
                             ui::band_chip(ui, sense.band(), sense.rank);
                         });
-                        ui.label(RichText::new(sense.def).size(13.5).color(ui::MUTED));
+                        ui.label(RichText::new(sense.def).size(13.5).color(ui::muted(ui)));
                     });
                     if ui::card_clicked(ui, &response) {
                         open = Some(sense.word);
@@ -216,7 +220,7 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
 fn idle_hint(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
     ui.add_space(14.0);
     ui.vertical_centered(|ui| {
-        ui.label(RichText::new("🔍").size(40.0));
+        ui.label(RichText::new(crate::app::APP_NAME).size(26.0).strong());
         ui.label(
             RichText::new(format!(
                 "{} headwords, {} senses — works with no connection",
@@ -224,7 +228,7 @@ fn idle_hint(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
                 ui::thousands(ctx.dict.sense_count())
             ))
             .size(13.0)
-            .color(ui::MUTED),
+            .color(ui::muted(ui)),
         );
     });
     ui.add_space(10.0);
@@ -238,12 +242,12 @@ fn idle_hint(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
         });
         ui.label(
             RichText::new(
-                "Typos still find the word (teh → the), so do inflected forms \
-                 (swimming → swim), and Vietnamese with tone marks searches \
-                 the definitions instead.",
+                "Typos still find the word (teh finds the), so do inflected \
+                 forms (swimming finds swim), and Vietnamese with tone marks \
+                 searches the definitions instead.",
             )
             .size(12.0)
-            .color(ui::MUTED),
+            .color(ui::muted(ui)),
         );
     });
 }
@@ -281,7 +285,7 @@ fn word_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Word
     egui::Panel::top("word-header").show(ui, |ui| {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            if ui.button("←").clicked() {
+            if ui.button("‹").clicked() {
                 state.close();
             }
             ui.label(RichText::new(word.text).size(26.0).strong());
@@ -291,23 +295,23 @@ fn word_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Word
         });
         ui.horizontal_wrapped(|ui| {
             if !word.ipa.is_empty() {
-                ui.label(RichText::new(word.ipa).size(15.0).color(ui::ACCENT));
+                ui.label(RichText::new(word.ipa).size(15.0).color(ui::accent(ui)));
             }
             if let Some(sense) = meanings.get(state.focus) {
                 ui::band_chip(ui, sense.band(), sense.rank);
             }
             if word.kind == Kind::Phrase {
-                ui::chip(ui, "phrase", ui::ACCENT);
+                ui::chip(ui, "phrase", ui::accent(ui));
             }
             if word.offensive {
-                ui::chip(ui, "coarse — lookup only", ui::BAD);
+                ui::chip(ui, "coarse — lookup only", ui::bad(ui));
             }
         });
         // Spec 1.1: "cũng là dạng của …".
         let forms = search::forms_of(ctx.dict, word.norm);
         if !forms.is_empty() {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("also").size(12.0).color(ui::MUTED));
+                ui.label(RichText::new("also").size(12.0).color(ui::muted(ui)));
                 for (lemma, tag) in forms {
                     if ui
                         .link(RichText::new(format!("{} of {}", tag, lemma.text)).size(12.0))
@@ -332,19 +336,19 @@ fn word_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Word
             ui.add_space(12.0);
             ui.label(
                 RichText::new("This entry is only an inflected form of another word.")
-                    .color(ui::MUTED),
+                    .color(ui::muted(ui)),
             );
         }
         // --- sense cards (spec 1.2: one sense, one learning item) ---
         for (i, sense) in meanings.iter().enumerate() {
             let selected = i == state.focus;
             let state_now = ctx.progress.state(sense);
-            let response = ui::card(ui, selected.then_some(ui::ACCENT), |ui| {
+            let response = ui::card(ui, selected.then_some(ui::accent(ui)), |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(
                         RichText::new(format!("{}.", i + 1))
                             .strong()
-                            .color(ui::MUTED),
+                            .color(ui::muted(ui)),
                     );
                     ui::pos_chip(ui, sense.pos);
                     ui::state_chip(ui, state_now);
@@ -360,7 +364,7 @@ fn word_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Word
                             RichText::new(sense.example)
                                 .size(13.5)
                                 .italics()
-                                .color(ui::MUTED),
+                                .color(ui::muted(ui)),
                         );
                         ui::speak_buttons(ui, sense.example);
                     });
@@ -419,7 +423,7 @@ fn usage_block(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Wo
                 ui.label(
                     RichText::new(format!("{}:", kind.label()))
                         .size(12.5)
-                        .color(ui::MUTED),
+                        .color(ui::muted(ui)),
                 );
                 for text in words {
                     // Only link the ones that are actually in the dictionary.
@@ -430,7 +434,7 @@ fn usage_block(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Wo
                             }
                         }
                         None => {
-                            ui.label(RichText::new(text).size(13.0).color(ui::MUTED));
+                            ui.label(RichText::new(text).size(13.0).color(ui::muted(ui)));
                         }
                     }
                 }
@@ -438,7 +442,7 @@ fn usage_block(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Wo
         }
         if !phrases.is_empty() {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Phrases:").size(12.5).color(ui::MUTED));
+                ui.label(RichText::new("Phrases:").size(12.5).color(ui::muted(ui)));
                 for phrase in phrases {
                     if ui.link(RichText::new(phrase.text).size(13.0)).clicked() {
                         state.open(phrase.id);
@@ -454,11 +458,12 @@ fn action_bar(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, sense: 
     egui::Panel::bottom("actions").show(ui, |ui| {
         ui.add_space(5.0);
         let current = ctx.progress.state(sense);
+        let accent = ui::accent(ui);
         ui.columns(3, |c| {
             if c[0]
                 .add_sized(
-                    [c[0].available_width(), 38.0],
-                    egui::Button::new("I know this"),
+                    [c[0].available_width(), 40.0],
+                    egui::Button::new(RichText::new("I know this").size(13.5)),
                 )
                 .clicked()
             {
@@ -469,16 +474,21 @@ fn action_bar(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, sense: 
             }
             if c[1]
                 .add_sized(
-                    [c[1].available_width(), 38.0],
-                    egui::Button::new("Quick test"),
+                    [c[1].available_width(), 40.0],
+                    egui::Button::new(RichText::new("Quick test").size(13.5)),
                 )
                 .clicked()
             {
                 state.test = Some(build_quick_test(ctx, sense));
             }
-            let learn = egui::Button::new(RichText::new("Learn this").color(ui::ACCENT).strong());
+            let learn = egui::Button::new(
+                RichText::new("Learn this")
+                    .size(13.5)
+                    .color(accent)
+                    .strong(),
+            );
             if c[2]
-                .add_sized([c[2].available_width(), 38.0], learn)
+                .add_sized([c[2].available_width(), 40.0], learn)
                 .clicked()
             {
                 let undo = ctx
@@ -489,7 +499,11 @@ fn action_bar(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, sense: 
         });
         if current != State::Unexplored {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Selected sense:").size(11.5).color(ui::MUTED));
+                ui.label(
+                    RichText::new("Selected sense:")
+                        .size(11.5)
+                        .color(ui::muted(ui)),
+                );
                 ui::state_chip(ui, current);
             });
         }
@@ -535,7 +549,7 @@ fn quick_test_page(ui: &mut egui::Ui, ctx: &mut Ctx, test: &mut QuickTest) -> bo
             if ui.small_button("Exit").clicked() {
                 finish = true;
             }
-            ui.label(RichText::new(format!("{}/2", (test.step + 1).min(2))).color(ui::MUTED));
+            ui.label(RichText::new(format!("{}/2", (test.step + 1).min(2))).color(ui::muted(ui)));
         });
     });
     ui.add_space(6.0);
@@ -597,7 +611,7 @@ fn fill_question(ui: &mut egui::Ui, gap: &Cloze, typed: &mut String) -> Option<b
         ui.label(
             RichText::new("Fill in the missing word:")
                 .size(13.0)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
         );
         ui.add_space(4.0);
         ui.label(RichText::new(format!("{}{}{}", gap.before, gap.blank(), gap.after)).size(16.0));
@@ -608,7 +622,7 @@ fn fill_question(ui: &mut egui::Ui, gap: &Cloze, typed: &mut String) -> Option<b
         egui::TextEdit::singleline(typed).hint_text(format!("starts with “{}”", gap.hint)),
     );
     let submitted = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    let clicked = ui::wide_button(ui, "Answer", ui::ACCENT).clicked();
+    let clicked = ui::wide_button(ui, "Answer", ui::accent(ui)).clicked();
     (submitted || clicked).then(|| gap.accepts(typed))
 }
 
@@ -622,14 +636,18 @@ fn pick_question(
     ui::card(ui, None, |ui| {
         ui.label(RichText::new(prompt).size(17.0).strong());
         if !choice.prompt.is_empty() && !prompt.contains(&choice.prompt) {
-            ui.label(RichText::new(&choice.prompt).size(14.0).color(ui::MUTED));
+            ui.label(
+                RichText::new(&choice.prompt)
+                    .size(14.0)
+                    .color(ui::muted(ui)),
+            );
         }
     });
     ui.add_space(8.0);
     for (i, option) in choice.options.iter().enumerate() {
         let color = match *picked {
-            Some(_) if i == choice.answer => ui::GOOD,
-            Some(p) if p == i => ui::BAD,
+            Some(_) if i == choice.answer => ui::good(ui),
+            Some(p) if p == i => ui::bad(ui),
             _ => ui.visuals().text_color(),
         };
         if ui::wide_button(ui, option, color).clicked() && picked.is_none() {
@@ -639,7 +657,7 @@ fn pick_question(
     }
     let p = (*picked)?;
     ui.add_space(6.0);
-    if ui::wide_button(ui, "Continue", ui::ACCENT).clicked() {
+    if ui::wide_button(ui, "Continue", ui::accent(ui)).clicked() {
         return Some(p == choice.answer);
     }
     None

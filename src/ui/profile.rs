@@ -5,7 +5,7 @@ use eframe::egui::{self, RichText};
 
 use crate::app::Ctx;
 use crate::placement::{FALSE_ALARM_LIMIT, MAX_ITEMS, Placement, Verdict};
-use crate::progress::{Progress, State};
+use crate::progress::{Progress, State, Theme};
 use crate::ui;
 
 #[derive(Default)]
@@ -54,13 +54,13 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                     ui.label(
                         RichText::new("Vocabulary frontier:")
                             .size(13.0)
-                            .color(ui::MUTED),
+                            .color(ui::muted(ui)),
                     );
                     ui.label(
                         RichText::new(format!("#{}", ui::thousands(ctx.progress.assumed_below)))
                             .size(15.0)
                             .strong()
-                            .color(ui::ACCENT),
+                            .color(ui::accent(ui)),
                     );
                 });
                 ui.label(
@@ -69,13 +69,13 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                         ui::thousands(ctx.progress.frontier)
                     ))
                     .size(12.5)
-                    .color(ui::MUTED),
+                    .color(ui::muted(ui)),
                 );
             } else {
                 ui.label(
                     RichText::new("Placement test not taken yet.")
                         .size(13.0)
-                        .color(ui::MUTED),
+                        .color(ui::muted(ui)),
                 );
             }
             ui.add_space(8.0);
@@ -84,7 +84,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             } else {
                 "Take the placement test"
             };
-            if ui::wide_button(ui, label, ui::ACCENT).clicked() {
+            if ui::wide_button(ui, label, ui::accent(ui)).clicked() {
                 state.test = Some(Placement::new(ctx.dict));
                 state.picked = None;
             }
@@ -93,7 +93,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                     "15–25 questions, with invented words mixed in to catch guessing. Retake it any time.",
                 )
                 .size(11.5)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
             );
         });
 
@@ -123,7 +123,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                         ui.label(
                             RichText::new(ui::thousands(counts[state_kind as usize]))
                                 .size(13.0)
-                                .color(ui::MUTED),
+                                .color(ui::muted(ui)),
                         );
                         ui.end_row();
                     }
@@ -131,11 +131,11 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui.add_space(4.0);
             ui.label(
                 RichText::new(format!(
-                    "🔥 {} day streak · best {}",
+                    "{} day streak · best {}",
                     ctx.progress.streak, ctx.progress.best_streak
                 ))
                 .size(12.5)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
             );
         });
 
@@ -145,6 +145,17 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui.label(RichText::new("Settings").size(17.0).strong());
             ui.add_space(6.0);
 
+            ui.label(RichText::new("Theme").size(13.0));
+            ui.horizontal(|ui| {
+                for theme in [Theme::Light, Theme::Dark] {
+                    let on = ctx.progress.theme == theme;
+                    if ui.selectable_label(on, theme.label()).clicked() {
+                        ctx.progress.theme = theme;
+                    }
+                }
+            });
+
+            ui.add_space(8.0);
             ui.label(RichText::new("New words per day").size(13.0));
             ui.horizontal(|ui| {
                 for goal in [5u32, 10, 20] {
@@ -166,7 +177,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui.label(
                 RichText::new("Higher means firmer recall, but more reviews to sit through.")
                     .size(11.5)
-                    .color(ui::MUTED),
+                    .color(ui::muted(ui)),
             );
 
             // Spec 2.3, rule 3: the Skip Band.
@@ -201,7 +212,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                     ui::thousands(ctx.dict.learn_count())
                 ))
                 .size(12.5)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
             );
             ui.add_space(4.0);
             for (what, source, license) in [
@@ -221,7 +232,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                 ui.label(
                     RichText::new(format!("• {what}: {source} — {license}"))
                         .size(11.5)
-                        .color(ui::MUTED),
+                        .color(ui::muted(ui)),
                 );
             }
             ui.add_space(4.0);
@@ -230,26 +241,27 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                     "Everything lives on your device: lookup, study and review all work offline.",
                 )
                 .size(11.5)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
             );
         });
 
         // --- reset ---
         ui.add_space(8.0);
         if state.confirm_reset {
-            ui::card(ui, Some(ui::BAD), |ui| {
+            ui::card(ui, Some(ui::bad(ui)), |ui| {
                 ui.label(RichText::new("Erase all progress?").strong());
                 ui.label(
                     RichText::new("This cannot be undone.")
                         .size(12.0)
-                        .color(ui::MUTED),
+                        .color(ui::muted(ui)),
                 );
                 ui.add_space(6.0);
+                let danger = ui::bad(ui);
                 ui.columns(2, |c| {
                     if c[0].button("Cancel").clicked() {
                         state.confirm_reset = false;
                     }
-                    if c[1].button(RichText::new("Erase").color(ui::BAD)).clicked() {
+                    if c[1].button(RichText::new("Erase").color(danger)).clicked() {
                         *ctx.progress = Progress::default();
                         ctx.progress.roll_to(ctx.day);
                         state.confirm_reset = false;
@@ -258,7 +270,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                 });
             });
         } else if ui
-            .button(RichText::new("Erase progress").size(12.0).color(ui::MUTED))
+            .button(RichText::new("Erase progress").size(12.0).color(ui::muted(ui)))
             .clicked()
         {
             state.confirm_reset = true;
@@ -287,17 +299,17 @@ fn test_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
     egui::Panel::top("test-header").show(ui, |ui| {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            quit = ui.small_button("✕").clicked();
+            quit = ui.small_button("×").clicked();
             ui.add(
                 egui::ProgressBar::new(fraction)
                     .desired_height(8.0)
-                    .fill(ui::ACCENT),
+                    .fill(ui::accent(ui)),
             );
         });
         ui.label(
             RichText::new(format!("question {} / ~{}", asked + 1, MAX_ITEMS))
                 .size(11.5)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
         );
         ui.add_space(4.0);
     });
@@ -311,12 +323,12 @@ fn test_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         ui.add_space(4.0);
         ui.label(
             RichText::new(format!(
-                "⚠ You are picking meanings for words that do not exist (over \
+                "Careful: you are picking meanings for words that do not exist (over \
                  {:.0}%). Press “I don't know” when you are not sure.",
                 FALSE_ALARM_LIMIT * 100.0
             ))
             .size(12.0)
-            .color(ui::WARN),
+            .color(ui::warn(ui)),
         );
     }
 
@@ -333,7 +345,7 @@ fn test_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
     let mut answered: Option<Option<usize>> = None;
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(10.0);
-        ui::card(ui, Some(ui::ACCENT), |ui| {
+        ui::card(ui, Some(ui::accent(ui)), |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(4.0);
                 ui.label(RichText::new(&prompt).size(28.0).strong());
@@ -344,7 +356,7 @@ fn test_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         ui.label(
             RichText::new("What does this word mean?")
                 .size(13.0)
-                .color(ui::MUTED),
+                .color(ui::muted(ui)),
         );
         ui.add_space(6.0);
 
@@ -356,7 +368,7 @@ fn test_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         }
         ui.add_space(8.0);
         // Spec 2.2 requires this: not knowing must not have to be a guess.
-        if ui::wide_button(ui, "I don't know", ui::MUTED).clicked() {
+        if ui::wide_button(ui, "I don't know", ui::muted(ui)).clicked() {
             answered = Some(None);
         }
         ui.add_space(16.0);
@@ -380,12 +392,12 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
                 RichText::new(format!("#{}", ui::thousands(verdict.frontier)))
                     .size(38.0)
                     .strong()
-                    .color(ui::ACCENT),
+                    .color(ui::accent(ui)),
             );
             ui.label(
                 RichText::new("vocabulary frontier")
                     .size(12.5)
-                    .color(ui::MUTED),
+                    .color(ui::muted(ui)),
             );
         });
         ui.add_space(12.0);
@@ -395,20 +407,20 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
                 .num_columns(2)
                 .spacing([12.0, 4.0])
                 .show(ui, |ui| {
-                    ui.label(RichText::new("Questions").size(13.0).color(ui::MUTED));
+                    ui.label(RichText::new("Questions").size(13.0).color(ui::muted(ui)));
                     ui.label(RichText::new(verdict.asked.to_string()).size(13.0));
                     ui.end_row();
                     ui.label(
                         RichText::new("Answered correctly")
                             .size(13.0)
-                            .color(ui::MUTED),
+                            .color(ui::muted(ui)),
                     );
                     ui.label(RichText::new(format!("{:.0}%", verdict.raw_rate * 100.0)).size(13.0));
                     ui.end_row();
                     ui.label(
                         RichText::new("After guess correction")
                             .size(13.0)
-                            .color(ui::MUTED),
+                            .color(ui::muted(ui)),
                     );
                     ui.label(
                         RichText::new(format!("{:.0}%", verdict.corrected_rate * 100.0)).size(13.0),
@@ -417,15 +429,15 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
                     ui.label(
                         RichText::new("Claimed to know invented words")
                             .size(13.0)
-                            .color(ui::MUTED),
+                            .color(ui::muted(ui)),
                     );
                     ui.label(
                         RichText::new(format!("{:.0}%", verdict.false_alarm * 100.0))
                             .size(13.0)
                             .color(if verdict.false_alarm > FALSE_ALARM_LIMIT {
-                                ui::WARN
+                                ui::warn(ui)
                             } else {
-                                ui::MUTED
+                                ui::muted(ui)
                             }),
                     );
                     ui.end_row();
@@ -446,12 +458,12 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
                             ui::thousands(start + 1_000)
                         ))
                         .size(12.0)
-                        .color(ui::MUTED),
+                        .color(ui::muted(ui)),
                     );
                     ui.add(
                         egui::ProgressBar::new(share)
                             .desired_height(8.0)
-                            .fill(ui::C_ASSUMED)
+                            .fill(ui::c_assumed(ui))
                             .text(RichText::new(format!("{:.0}%", share * 100.0)).size(11.0)),
                     );
                 });
@@ -459,7 +471,7 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
         });
 
         ui.add_space(14.0);
-        if ui::wide_button(ui, "Start studying", ui::ACCENT).clicked() {
+        if ui::wide_button(ui, "Start studying", ui::accent(ui)).clicked() {
             state.result = None;
             *ctx.goto = Some(crate::app::Tab::Study);
         }
@@ -469,7 +481,7 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
                  Quick scan to find the gaps.",
             )
             .size(11.5)
-            .color(ui::MUTED),
+            .color(ui::muted(ui)),
         );
         ui.add_space(16.0);
     });

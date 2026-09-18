@@ -50,6 +50,25 @@ const LEVEL3_STABILITY: f32 = 21.0;
 /// Successful reviews before a Learning item graduates to Review (spec 3.1).
 const GRADUATE_REPS: u32 = 2;
 
+/// Which colour scheme to draw in.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Theme {
+    /// The default. Most reading here is Vietnamese prose in a dictionary, and
+    /// that is what paper-like contrast suits.
+    #[default]
+    Light,
+    Dark,
+}
+
+impl Theme {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Light => "Light",
+            Self::Dark => "Dark",
+        }
+    }
+}
+
 /// Spec 0.2's six states.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub enum State {
@@ -173,6 +192,7 @@ pub struct Progress {
     pub daily_goal: u32,
     /// FSRS desired retention, 0,8–0,95 (spec 3.2).
     pub retention: f32,
+    pub theme: Theme,
     pub streak: u32,
     pub best_streak: u32,
     /// Last day the user studied, for the streak.
@@ -206,6 +226,7 @@ impl Default for Progress {
             placement_done: false,
             daily_goal: 10,
             retention: 0.9,
+            theme: Theme::Light,
             streak: 0,
             best_streak: 0,
             last_active: 0,

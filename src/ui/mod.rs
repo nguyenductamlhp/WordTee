@@ -10,27 +10,100 @@ use eframe::egui::{self, Color32, RichText};
 use crate::dict::{Band, Pos};
 use crate::progress::State;
 
-/// The app's accent, inherited from the original tap-counter build.
-pub const ACCENT: Color32 = Color32::from_rgb(0x4d, 0xb6, 0xf5);
-pub const GOOD: Color32 = Color32::from_rgb(0x66, 0xbb, 0x6a);
-pub const WARN: Color32 = Color32::from_rgb(0xf5, 0xb3, 0x41);
-pub const BAD: Color32 = Color32::from_rgb(0xef, 0x53, 0x50);
-pub const MUTED: Color32 = Color32::from_gray(0x8a);
+/// Picks the value for the theme in use.
+///
+/// The two themes need different colours, not one shared mid-tone: a blue
+/// legible on near-black washes out on white, and an amber legible on white
+/// goes muddy on black.
+fn pick(ui: &egui::Ui, dark: Color32, light: Color32) -> Color32 {
+    if ui.visuals().dark_mode { dark } else { light }
+}
 
-/// Spec 2.3's four map colours.
-pub const C_KNOWN: Color32 = Color32::from_rgb(0x2e, 0x7d, 0x32);
-pub const C_ASSUMED: Color32 = Color32::from_rgb(0x7c, 0xb3, 0x42);
-pub const C_LEARNING: Color32 = Color32::from_rgb(0xf5, 0xb3, 0x41);
-pub const C_UNEXPLORED: Color32 = Color32::from_gray(0x3c);
+/// The app's accent, inherited from the original tap-counter build.
+pub fn accent(ui: &egui::Ui) -> Color32 {
+    pick(
+        ui,
+        Color32::from_rgb(0x4d, 0xb6, 0xf5),
+        Color32::from_rgb(0x0b, 0x6f, 0xc2),
+    )
+}
+
+pub fn good(ui: &egui::Ui) -> Color32 {
+    pick(
+        ui,
+        Color32::from_rgb(0x66, 0xbb, 0x6a),
+        Color32::from_rgb(0x2e, 0x7d, 0x32),
+    )
+}
+
+pub fn warn(ui: &egui::Ui) -> Color32 {
+    pick(
+        ui,
+        Color32::from_rgb(0xf5, 0xb3, 0x41),
+        Color32::from_rgb(0xa5, 0x62, 0x00),
+    )
+}
+
+pub fn bad(ui: &egui::Ui) -> Color32 {
+    pick(
+        ui,
+        Color32::from_rgb(0xef, 0x53, 0x50),
+        Color32::from_rgb(0xc6, 0x28, 0x28),
+    )
+}
+
+/// Secondary text: quiet, but still clear of the contrast floor either way.
+pub fn muted(ui: &egui::Ui) -> Color32 {
+    pick(ui, Color32::from_gray(0x9a), Color32::from_gray(0x5e))
+}
+
+// Spec 2.3's four map colours. These are fills rather than text, so the three
+// coloured ones hold up on either theme; only "unexplored" has to flip, since
+// it is the empty part of the bar and has to read as background.
+pub fn c_known(_ui: &egui::Ui) -> Color32 {
+    Color32::from_rgb(0x2e, 0x7d, 0x32)
+}
+
+pub fn c_assumed(_ui: &egui::Ui) -> Color32 {
+    Color32::from_rgb(0x7c, 0xb3, 0x42)
+}
+
+pub fn c_learning(ui: &egui::Ui) -> Color32 {
+    pick(
+        ui,
+        Color32::from_rgb(0xf5, 0xb3, 0x41),
+        Color32::from_rgb(0xe8, 0x9c, 0x0e),
+    )
+}
+
+pub fn c_unexplored(ui: &egui::Ui) -> Color32 {
+    pick(ui, Color32::from_gray(0x3c), Color32::from_gray(0xdc))
+}
 
 /// The colour a state gets on the map and on its chip.
-pub fn state_color(state: State) -> Color32 {
+pub fn state_color(ui: &egui::Ui, state: State) -> Color32 {
     match state {
-        State::Known | State::Mastered => C_KNOWN,
-        State::AssumedKnown => C_ASSUMED,
-        State::Learning | State::Review => C_LEARNING,
-        State::Unexplored => C_UNEXPLORED,
+        State::Known | State::Mastered => c_known(ui),
+        State::AssumedKnown => c_assumed(ui),
+        State::Learning | State::Review => c_learning(ui),
+        State::Unexplored => c_unexplored(ui),
     }
+}
+
+/// Blends `color` towards the panel behind it.
+///
+/// One expression covers both themes: the backdrop is dark in one and light in
+/// the other, so the same call gives a deep tint on dark and a pale one on
+/// light. Multiplying the colour's own gamma only ever darkens, which is why
+/// the chips would have been invisible on white.
+fn toward_background(ui: &egui::Ui, color: Color32, amount: f32) -> Color32 {
+    let bg = ui.visuals().panel_fill;
+    let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * amount).round() as u8;
+    Color32::from_rgb(
+        mix(bg.r(), color.r()),
+        mix(bg.g(), color.g()),
+        mix(bg.b(), color.b()),
+    )
 }
 
 /// A small filled pill, the app's one repeated label shape.
@@ -39,8 +112,8 @@ pub fn chip(ui: &mut egui::Ui, text: &str, color: Color32) {
         return;
     }
     egui::Frame::new()
-        .fill(color.gamma_multiply(0.22))
-        .stroke(egui::Stroke::new(1.0, color.gamma_multiply(0.55)))
+        .fill(toward_background(ui, color, 0.22))
+        .stroke(egui::Stroke::new(1.0, toward_background(ui, color, 0.55)))
         .corner_radius(9)
         .inner_margin(egui::Margin::symmetric(7, 2))
         .show(ui, |ui| {
@@ -49,11 +122,13 @@ pub fn chip(ui: &mut egui::Ui, text: &str, color: Color32) {
 }
 
 pub fn state_chip(ui: &mut egui::Ui, state: State) {
-    chip(ui, state.label(), state_color(state));
+    let color = state_color(ui, state);
+    chip(ui, state.label(), color);
 }
 
 pub fn pos_chip(ui: &mut egui::Ui, pos: Pos) {
-    chip(ui, pos.short(), MUTED);
+    let color = muted(ui);
+    chip(ui, pos.short(), color);
 }
 
 /// Spec 1.3's commonness indicator: four named tiers rather than one bar,
@@ -61,10 +136,10 @@ pub fn pos_chip(ui: &mut egui::Ui, pos: Pos) {
 /// like neighbours.
 pub fn band_chip(ui: &mut egui::Ui, band: Band, rank: u32) {
     let color = match band {
-        Band::Core => GOOD,
-        Band::Advanced => ACCENT,
-        Band::Academic => WARN,
-        Band::Rare => MUTED,
+        Band::Core => good(ui),
+        Band::Advanced => accent(ui),
+        Band::Academic => warn(ui),
+        Band::Rare => muted(ui),
     };
     let text = match rank {
         0 => band.label().to_owned(),
@@ -95,7 +170,7 @@ pub fn section<R>(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::U
     ui.label(
         RichText::new(title.to_uppercase())
             .size(11.5)
-            .color(MUTED)
+            .color(muted(ui))
             .strong(),
     );
     ui.add_space(3.0);
@@ -115,7 +190,7 @@ pub fn card<R>(
         .corner_radius(10)
         .inner_margin(12);
     if let Some(color) = accent {
-        frame = frame.stroke(egui::Stroke::new(1.5, color.gamma_multiply(0.7)));
+        frame = frame.stroke(egui::Stroke::new(1.5, toward_background(ui, color, 0.8)));
     }
     frame.show(ui, body)
 }
@@ -145,20 +220,21 @@ pub fn progress_bar(ui: &mut egui::Ui, counts: [u32; 6], height: f32) -> egui::R
         egui::vec2(ui.available_width(), height),
         egui::Sense::click(),
     );
+    // Resolved before `ui.painter()` borrows `ui`.
+    let empty = c_unexplored(ui);
+    // Confirmed first, then inferred, then in progress — left to right.
+    let order = [
+        (State::Mastered, c_known(ui)),
+        (State::Known, c_known(ui)),
+        (State::AssumedKnown, c_assumed(ui)),
+        (State::Review, c_learning(ui)),
+        (State::Learning, c_learning(ui)),
+    ];
     let painter = ui.painter();
-    painter.rect_filled(rect, 4.0, C_UNEXPLORED);
+    painter.rect_filled(rect, 4.0, empty);
     if total == 0 {
         return response;
     }
-
-    // Confirmed first, then inferred, then in progress — left to right.
-    let order = [
-        (State::Mastered, C_KNOWN),
-        (State::Known, C_KNOWN),
-        (State::AssumedKnown, C_ASSUMED),
-        (State::Review, C_LEARNING),
-        (State::Learning, C_LEARNING),
-    ];
     let mut x = rect.left();
     for (state, color) in order {
         let width = rect.width() * counts[state as usize] as f32 / total as f32;
@@ -228,14 +304,13 @@ pub fn speak_buttons(ui: &mut egui::Ui, text: &str) {
     if !can_speak() {
         return;
     }
-    if ui.button("🔊").on_hover_text("Play (1.0×)").clicked() {
+    // Spelled out rather than 🔊/🐢: those live only in the fallback emoji
+    // fonts, so they arrive in a different typeface — or, for the turtle, not
+    // at all.
+    if ui.button("Play").clicked() {
         speak(text, 1.0);
     }
-    if ui
-        .button("🐢")
-        .on_hover_text("Play slowly (0.75×)")
-        .clicked()
-    {
+    if ui.button("0.75×").on_hover_text("Play slowly").clicked() {
         speak(text, 0.75);
     }
 }
@@ -254,16 +329,27 @@ mod tests {
     }
 
     #[test]
-    fn every_state_has_its_own_reading() {
-        // Spec 2.3's legend must stay distinguishable: confirmed, inferred and
-        // in-progress are three different colours.
-        assert_eq!(state_color(State::Known), state_color(State::Mastered));
-        assert_eq!(state_color(State::Learning), state_color(State::Review));
-        assert_ne!(state_color(State::Known), state_color(State::AssumedKnown));
-        assert_ne!(
-            state_color(State::AssumedKnown),
-            state_color(State::Learning)
-        );
-        assert_ne!(state_color(State::Learning), state_color(State::Unexplored));
+    fn every_state_has_its_own_reading_in_both_themes() {
+        // Spec 2.3's legend has to stay distinguishable: confirmed, inferred
+        // and in-progress are three different colours — on either theme.
+        for dark in [true, false] {
+            let ctx = egui::Context::default();
+            ctx.set_theme(if dark {
+                egui::ThemePreference::Dark
+            } else {
+                egui::ThemePreference::Light
+            });
+            ctx.run_ui(Default::default(), |ui| {
+                let c = |s| state_color(ui, s);
+                assert_eq!(c(State::Known), c(State::Mastered));
+                assert_eq!(c(State::Learning), c(State::Review));
+                assert_ne!(c(State::Known), c(State::AssumedKnown));
+                assert_ne!(c(State::AssumedKnown), c(State::Learning));
+                assert_ne!(c(State::Learning), c(State::Unexplored), "dark={dark}");
+                // The empty part of the bar must not be mistaken for progress.
+                assert_ne!(c(State::Unexplored), ui.visuals().panel_fill, "dark={dark}");
+            })
+            .drop_without_applying_deltas();
+        }
     }
 }
