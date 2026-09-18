@@ -1,202 +1,368 @@
-//! The tap counter UI. Shared by every platform; the entry points live in
-//! `lib.rs`, `main.rs`, `android.rs` and `web.rs`.
+//! The app shell: four tabs, the shared context they draw with, and the saved
+//! progress underneath.
 
-use eframe::egui;
+use eframe::egui::{self, RichText};
+
+use crate::dict::{Dict, WordId};
+use crate::progress::{self, Day, Progress, Theme, Undo};
+use crate::quiz::Shown;
+use crate::rng::Rng;
+use crate::ui;
 
 /// Window title on desktop, launcher label on Android.
 pub const APP_NAME: &str = "WordTee";
 
-/// Accent colour used for the counter and the tap ripples.
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(0x4d, 0xb6, 0xf5);
+/// The UI font.
+///
+/// egui's bundled Ubuntu-Light covers only 89% of the characters this app puts
+/// on screen. The two gaps are exactly the two things the app is made of:
+/// Vietnamese tone marks, which live in Latin Extended Additional
+/// (U+1EA0–U+1EF9), and the IPA in every pronunciation — `ˈ ə ɪ ː` alone occur
+/// 150.000 times in the dictionary. Both rendered as empty boxes. Noto Sans
+/// covers 99,99% of the pack; see the test at the bottom of this file.
+static UI_FONT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/fonts/NotoSans-Regular.ttf"
+));
 
-/// How long a tap ripple stays on screen, in seconds.
-const RIPPLE_LIFETIME: f32 = 0.55;
+/// Key the progress is stored under (eframe's storage: a file on desktop and
+/// Android, local storage in the browser).
+const STORAGE_KEY: &str = "wordtee.progress";
 
-/// How long the counter stays "popped" after a tap, in seconds.
-const POP_LIFETIME: f32 = 0.22;
+/// Spec 1.4: how long the Undo offer stays on screen.
+const UNDO_SECONDS: f64 = 5.0;
 
-/// An expanding circle drawn where a tap landed, so every tap is visible as
-/// well as counted.
-struct Ripple {
-    pos: egui::Pos2,
-    /// Value of `Context::input(|i| i.time)` when the tap happened.
-    born: f64,
+/// The four places you can be.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Tab {
+    #[default]
+    Lookup,
+    Study,
+    Map,
+    Profile,
 }
 
-/// Counts taps, and nothing else.
-#[derive(Default)]
+impl Tab {
+    /// Left-to-right order in the bar. Look up sits third, next to the thumb;
+    /// it is still where the app opens, which [`Tab::default`] decides.
+    const ALL: [Self; 4] = [Self::Study, Self::Map, Self::Lookup, Self::Profile];
+
+    /// Shown on hover, since the bar itself is icons.
+    fn label(self) -> &'static str {
+        match self {
+            Self::Lookup => "Look up",
+            Self::Study => "Study",
+            Self::Map => "Map",
+            Self::Profile => "You",
+        }
+    }
+
+    fn icon(self) -> ui::Icon {
+        match self {
+            Self::Lookup => ui::Icon::Search,
+            Self::Study => ui::Icon::Study,
+            Self::Map => ui::Icon::Map,
+            Self::Profile => ui::Icon::Person,
+        }
+    }
+}
+
+/// A message at the bottom of the screen, optionally undoable (spec 1.4).
+pub struct Toast {
+    pub message: String,
+    pub undo: Option<Undo>,
+    /// `Context::input(|i| i.time)` when it appeared.
+    pub born: f64,
+}
+
+/// What every screen is handed: the dictionary, the user, and the few things
+/// a screen may change outside itself.
+pub struct Ctx<'a> {
+    pub dict: &'a Dict,
+    pub progress: &'a mut Progress,
+    pub rng: &'a mut Rng,
+    pub day: Day,
+    pub shown: &'a mut Shown,
+    pub toast: &'a mut Option<Toast>,
+    /// Set to jump to another tab after this frame.
+    pub goto: &'a mut Option<Tab>,
+    /// Set to open a word on the lookup tab.
+    pub open_word: &'a mut Option<WordId>,
+    pub now: f64,
+}
+
+impl Ctx<'_> {
+    /// Shows a message with no Undo.
+    pub fn say(&mut self, message: impl Into<String>) {
+        *self.toast = Some(Toast {
+            message: message.into(),
+            undo: None,
+            born: self.now,
+        });
+    }
+
+    /// Shows a message with the five-second Undo of spec 1.4.
+    pub fn say_undoable(&mut self, message: impl Into<String>, undo: Undo) {
+        *self.toast = Some(Toast {
+            message: message.into(),
+            undo: Some(undo),
+            born: self.now,
+        });
+    }
+}
+
+/// WordTee.
 pub struct WordTeeApp {
-    count: u64,
-    ripples: Vec<Ripple>,
-    /// Time of the most recent tap, used for the counter "pop" animation.
-    last_tap: Option<f64>,
+    dict: Dict,
+    progress: Progress,
+    rng: Rng,
+    day: Day,
+    shown: Shown,
+    tab: Tab,
+    toast: Option<Toast>,
+    lookup: ui::lookup::LookupState,
+    study: ui::study::StudyState,
+    map: ui::map::MapState,
+    profile: ui::profile::ProfileState,
+}
+
+impl Default for WordTeeApp {
+    fn default() -> Self {
+        let day = progress::today();
+        let mut progress = Progress::default();
+        progress.roll_to(day);
+        Self {
+            dict: Dict::load(),
+            progress,
+            rng: Rng::new(),
+            day,
+            shown: Shown::default(),
+            tab: Tab::default(),
+            toast: None,
+            lookup: Default::default(),
+            study: Default::default(),
+            map: Default::default(),
+            profile: Default::default(),
+        }
+    }
 }
 
 impl WordTeeApp {
-    /// Builds the app and applies the shared look-and-feel.
+    /// Builds the app, restoring saved progress if there is any.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         Self::configure_style(&cc.egui_ctx);
-        Self::default()
+        let mut app = Self::default();
+        if let Some(storage) = cc.storage
+            && let Some(saved) = eframe::get_value::<Progress>(storage, STORAGE_KEY)
+        {
+            app.progress = saved;
+            app.progress.roll_to(app.day);
+        }
+        app
     }
 
-    /// The app's look-and-feel. Separate from [`Self::new`] so tests (and any
-    /// other embedder) can set it up without an [`eframe::CreationContext`].
+    /// The app's look and feel. Separate from [`Self::new`] so tests can set it
+    /// up without an [`eframe::CreationContext`].
     pub fn configure_style(ctx: &egui::Context) {
-        ctx.set_theme(egui::ThemePreference::Dark);
-
-        // Nudge every text style up a little: the default sizes are tuned for a
-        // mouse pointer and read small under a fingertip.
+        Self::install_font(ctx);
+        Self::apply_theme(ctx, Theme::default());
         ctx.all_styles_mut(|style| {
+            // The default sizes are tuned for a mouse pointer and read small
+            // under a fingertip.
             for font in style.text_styles.values_mut() {
-                font.size *= 1.35;
+                font.size *= 1.15;
             }
-            style.spacing.button_padding = egui::vec2(12.0, 8.0);
+            style.spacing.button_padding = egui::vec2(10.0, 6.0);
+            style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+            let accent = if style.visuals.dark_mode {
+                egui::Color32::from_rgb(0x4d, 0xb6, 0xf5)
+            } else {
+                egui::Color32::from_rgb(0x0b, 0x6f, 0xc2)
+            };
+            style.visuals.selection.bg_fill = accent.gamma_multiply(0.35);
         });
     }
 
-    /// Number of taps counted so far.
-    pub fn count(&self) -> u64 {
-        self.count
+    /// Switches the colour scheme.
+    fn apply_theme(ctx: &egui::Context, theme: Theme) {
+        ctx.set_theme(match theme {
+            Theme::Light => egui::ThemePreference::Light,
+            Theme::Dark => egui::ThemePreference::Dark,
+        });
     }
 
-    /// Draws one frame into `ui`.
+    /// Puts [`UI_FONT`] in front of the bundled fonts.
+    ///
+    /// It goes first rather than last so that a Vietnamese word is drawn in one
+    /// typeface throughout — as a fallback it would only supply the accented
+    /// letters, and every word would be a mix of two fonts. The emoji fonts
+    /// stay behind it and still serve the tab bar icons. Monospace keeps Hack
+    /// in front and takes this only as a fallback, so columns still line up.
+    fn install_font(ctx: &egui::Context) {
+        use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
+
+        ctx.add_font(FontInsert::new(
+            "NotoSans",
+            egui::FontData::from_static(UI_FONT),
+            vec![
+                InsertFontFamily {
+                    family: egui::FontFamily::Proportional,
+                    priority: FontPriority::Highest,
+                },
+                InsertFontFamily {
+                    family: egui::FontFamily::Monospace,
+                    priority: FontPriority::Lowest,
+                },
+            ],
+        ));
+    }
+
+    pub fn progress(&self) -> &Progress {
+        &self.progress
+    }
+
+    pub fn dict(&self) -> &Dict {
+        &self.dict
+    }
+
+    pub fn tab(&self) -> Tab {
+        self.tab
+    }
+
+    /// Draws one frame.
     ///
     /// Kept separate from the [`eframe::App`] impl so it can be driven without
-    /// an [`eframe::Frame`], which is what the tests below do.
+    /// an [`eframe::Frame`], which is what the tests do.
     pub fn show(&mut self, ui: &mut egui::Ui) {
         let now = ui.input(|i| i.time);
+        // The day can turn over while the app is open.
+        let day = progress::today();
+        if day != self.day {
+            self.day = day;
+            self.progress.roll_to(day);
+            self.study.reset();
+        }
 
-        egui::Panel::top("toolbar").show(ui, |ui| {
+        // The setting rides along with the saved progress, so this is also what
+        // restores the chosen theme on the first frame after a restart.
+        let wants_dark = self.progress.theme == Theme::Dark;
+        if ui.visuals().dark_mode != wants_dark {
+            Self::apply_theme(ui.ctx(), self.progress.theme);
+        }
+
+        let mut goto = None;
+        let mut open_word = None;
+
+        egui::Panel::top("chrome").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.add_space(4.0);
-                ui.strong(APP_NAME);
+                ui.add_space(2.0);
+                ui.label(RichText::new(APP_NAME).strong().color(ui::accent(ui)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(4.0);
-                    if ui
-                        .add_enabled(self.count > 0, egui::Button::new("Reset"))
-                        .clicked()
-                    {
-                        self.reset();
+                    ui.add_space(2.0);
+                    if self.progress.streak > 0 {
+                        let color = ui::good(ui);
+                        ui::chip(ui, &format!("{}d streak", self.progress.streak), color);
                     }
-                    ui.label(format!("{} taps", self.count));
+                    let (due, new, _) = self.study.pending(&self.dict, &self.progress, self.day);
+                    if due + new > 0 {
+                        ui::chip(ui, &format!("{} due", due + new), ui::warn(ui));
+                    }
                 });
             });
+            ui.add_space(2.0);
         });
 
-        // A zero-margin frame, so the tap area really does reach the edges of
-        // the screen instead of stopping at the default panel padding.
-        let frame = egui::Frame::central_panel(ui.style()).inner_margin(0);
+        self.show_tab_bar(ui, &mut goto);
+        self.show_toast(ui, now);
 
-        egui::CentralPanel::default().frame(frame).show(ui, |ui| {
-            let rect = ui.max_rect();
+        let mut ctx = Ctx {
+            dict: &self.dict,
+            progress: &mut self.progress,
+            rng: &mut self.rng,
+            day: self.day,
+            shown: &mut self.shown,
+            toast: &mut self.toast,
+            goto: &mut goto,
+            open_word: &mut open_word,
+            now,
+        };
 
-            // One click-sensitive area covering the whole panel: that is the
-            // "screen" the user taps. Claiming it also stops egui from handing
-            // the press to anything underneath.
-            let area = ui.interact(rect, ui.id().with("tap-area"), egui::Sense::click());
-            let hovered = area.contains_pointer();
+        egui::CentralPanel::default().show(ui, |ui| match self.tab {
+            Tab::Lookup => ui::lookup::show(ui, &mut ctx, &mut self.lookup),
+            Tab::Study => ui::study::show(ui, &mut ctx, &mut self.study),
+            Tab::Map => ui::map::show(ui, &mut ctx, &mut self.map),
+            Tab::Profile => ui::profile::show(ui, &mut ctx, &mut self.profile),
+        });
 
-            // React on press rather than release so the ripple appears under the
-            // finger immediately, and so a tap counts even if the finger slides.
-            let tap_pos = ui.input(|i| {
-                if hovered && i.pointer.any_pressed() {
-                    i.pointer.interact_pos()
-                } else {
-                    None
+        if let Some(word) = open_word {
+            self.lookup.open(word);
+            self.tab = Tab::Lookup;
+        } else if let Some(tab) = goto {
+            self.tab = tab;
+        }
+    }
+
+    /// The bottom navigation bar.
+    fn show_tab_bar(&mut self, ui: &mut egui::Ui, goto: &mut Option<Tab>) {
+        egui::Panel::bottom("tabs").show(ui, |ui| {
+            ui.add_space(4.0);
+            let current = self.tab;
+            ui.columns(Tab::ALL.len(), |columns| {
+                for (column, tab) in columns.iter_mut().zip(Tab::ALL) {
+                    if ui::tab_button(column, tab.icon(), current == tab, tab.label()).clicked() {
+                        *goto = Some(tab);
+                    }
                 }
             });
-            if let Some(pos) = tap_pos {
-                self.tap(Some(pos), now);
-            }
-
-            // Space/Enter are a convenience for desktop and hardware keyboards.
-            if ui.input(|i| i.key_pressed(egui::Key::Space) || i.key_pressed(egui::Key::Enter)) {
-                self.tap(Some(rect.center()), now);
-            }
-
-            let painter = ui.painter().clone();
-            self.paint_counter(&painter, rect, now);
-            let rippling = self.paint_ripples(&painter, now);
-
-            let popping = self
-                .last_tap
-                .is_some_and(|t| (now - t) as f32 <= POP_LIFETIME);
-            if rippling || popping {
-                ui.ctx().request_repaint();
-            }
+            ui.add_space(4.0);
         });
     }
 
-    /// Registers a tap, optionally at a screen position (keyboard taps have none).
-    fn tap(&mut self, at: Option<egui::Pos2>, now: f64) {
-        self.count += 1;
-        self.last_tap = Some(now);
-        if let Some(pos) = at {
-            self.ripples.push(Ripple { pos, born: now });
+    /// The message strip, with the Undo button while it is still offered.
+    fn show_toast(&mut self, ui: &mut egui::Ui, now: f64) {
+        let Some(toast) = &self.toast else { return };
+        let age = now - toast.born;
+        if age > UNDO_SECONDS * 2.0 {
+            self.toast = None;
+            return;
         }
-    }
+        let undoable = toast.undo.is_some() && age <= UNDO_SECONDS;
+        let message = toast.message.clone();
+        let mut dismiss = false;
+        let mut undo = false;
 
-    fn reset(&mut self) {
-        self.count = 0;
-        self.ripples.clear();
-        self.last_tap = None;
-    }
+        egui::Panel::bottom("toast").show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&message).size(13.0));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("×").clicked() {
+                        dismiss = true;
+                    }
+                    if undoable {
+                        let left = (UNDO_SECONDS - age).ceil() as u32;
+                        if ui.button(format!("Undo ({left}s)")).clicked() {
+                            undo = true;
+                        }
+                    }
+                });
+            });
+            ui.add_space(4.0);
+        });
 
-    /// Draws the tap ripples and drops the ones that have faded out.
-    ///
-    /// Returns `true` while a ripple is still visible, so the caller knows it
-    /// has to ask for another frame.
-    fn paint_ripples(&mut self, painter: &egui::Painter, now: f64) -> bool {
-        self.ripples
-            .retain(|r| (now - r.born) as f32 <= RIPPLE_LIFETIME);
-
-        for ripple in &self.ripples {
-            // `t` runs 0 -> 1 over the ripple's lifetime.
-            let t = ((now - ripple.born) as f32 / RIPPLE_LIFETIME).clamp(0.0, 1.0);
-            let radius = 12.0 + 110.0 * ease_out(t);
-            let alpha = (1.0 - t).powi(2);
-            painter.circle_stroke(
-                ripple.pos,
-                radius,
-                egui::Stroke::new(3.0, ACCENT.gamma_multiply(alpha)),
-            );
+        if undo {
+            if let Some(toast) = self.toast.take()
+                && let Some(undo) = toast.undo
+            {
+                self.progress.undo(undo);
+            }
+        } else if dismiss {
+            self.toast = None;
+        } else if undoable {
+            // Keep the countdown ticking.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(250));
         }
-
-        !self.ripples.is_empty()
-    }
-
-    /// Draws the big counter in the middle of `rect`.
-    fn paint_counter(&self, painter: &egui::Painter, rect: egui::Rect, now: f64) {
-        // A short scale-up right after a tap makes the increment feel physical.
-        let pop = self
-            .last_tap
-            .map(|t| (1.0 - ((now - t) as f32 / POP_LIFETIME).clamp(0.0, 1.0)).powi(2))
-            .unwrap_or(0.0);
-
-        let size = (rect.height() * 0.30)
-            .min(rect.width() * 0.42)
-            .clamp(40.0, 240.0)
-            * (1.0 + 0.14 * pop);
-
-        painter.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            self.count.to_string(),
-            egui::FontId::proportional(size),
-            ACCENT,
-        );
-
-        painter.text(
-            rect.center() + egui::vec2(0.0, size * 0.62),
-            egui::Align2::CENTER_CENTER,
-            if self.count == 0 {
-                "tap anywhere to start"
-            } else {
-                "tap anywhere"
-            },
-            egui::FontId::proportional((size * 0.13).clamp(12.0, 22.0)),
-            egui::Color32::from_gray(0x8a),
-        );
     }
 }
 
@@ -204,18 +370,22 @@ impl eframe::App for WordTeeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.show(ui);
     }
-}
 
-/// Cubic ease-out, so ripples start fast and settle slowly.
-fn ease_out(t: f32) -> f32 {
-    1.0 - (1.0 - t).powi(3)
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, STORAGE_KEY, &self.progress);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eframe::egui::{Event, Modifiers, PointerButton, Pos2, Rect, Vec2, pos2};
+    use crate::dict::SenseId;
+    use crate::placement::Placement;
+    use crate::progress::{Source, State};
+    use crate::study::Session;
+    use eframe::egui::{Event, Pos2, Rect, Vec2};
 
+    /// A phone-shaped screen; every layout has to survive this width.
     const SCREEN: Vec2 = Vec2::new(400.0, 800.0);
 
     /// Drives [`WordTeeApp`] frame by frame without a window or a GPU.
@@ -251,77 +421,422 @@ mod tests {
                 .drop_without_applying_deltas();
         }
 
-        /// A press followed by a release at `pos`, as a touchscreen would send it.
-        fn tap(&mut self, pos: Pos2) {
-            let button = |pressed| Event::PointerButton {
-                pos,
-                button: PointerButton::Primary,
-                pressed,
-                modifiers: Modifiers::default(),
+        /// A few frames, so anything animated or deferred settles.
+        fn settle(&mut self) {
+            for _ in 0..3 {
+                self.frame(vec![]);
+            }
+        }
+
+        fn type_text(&mut self, text: &str) {
+            self.frame(vec![Event::Text(text.to_owned())]);
+        }
+
+        fn on(&mut self, tab: Tab) {
+            self.app.tab = tab;
+            self.settle();
+        }
+
+        /// The first teachable learning item, for tests that need one.
+        fn item(&self, rank: u32) -> SenseId {
+            self.app.dict.at_rank(rank).expect("rank in range").id
+        }
+    }
+
+    /// Every character the dictionary is able to draw, and how often it occurs.
+    fn characters_in_the_pack(dict: &Dict) -> std::collections::HashMap<char, u64> {
+        let mut seen = std::collections::HashMap::new();
+        let mut count = |text: &str| {
+            for c in text.chars() {
+                *seen.entry(c).or_insert(0u64) += 1;
+            }
+        };
+        for id in 0..dict.word_count() {
+            let word = dict.word(id);
+            count(word.text);
+            count(word.ipa);
+            for (_, related) in dict.relations(id) {
+                count(related);
+            }
+        }
+        for id in 0..dict.sense_count() {
+            let sense = dict.sense(id);
+            count(sense.def);
+            count(sense.example);
+        }
+        seen
+    }
+
+    #[test]
+    fn the_bundled_font_covers_the_dictionary() {
+        // The bug this test exists for: egui's default font has neither the
+        // Vietnamese tone marks nor the IPA, and every one of them rendered as
+        // an empty box.
+        let face = ttf_parser::Face::parse(UI_FONT, 0).expect("the bundled font parses");
+        let dict = Dict::load();
+        let seen = characters_in_the_pack(&dict);
+
+        let covered = |c: char| c.is_whitespace() || face.glyph_index(c).is_some();
+        let total: u64 = seen.values().sum();
+        let missing: u64 = seen
+            .iter()
+            .filter(|(c, _)| !covered(**c))
+            .map(|(_, n)| n)
+            .sum();
+
+        // Vietnamese lives in Latin Extended Additional; the IPA in the two
+        // blocks after Latin Extended-B. Neither may have a single gap.
+        for (&c, &n) in &seen {
+            let must_have = matches!(c as u32,
+                0x00C0..=0x024F   // Latin supplements, including ơ ư đ
+                | 0x0250..=0x02AF // IPA extensions: ə ɪ ʊ ŋ
+                | 0x02B0..=0x02FF // modifiers: the ˈ ˌ ː of a transcription
+                | 0x1E00..=0x1EFF // Latin Extended Additional: ế ừ ụ ợ
+            );
+            assert!(
+                !must_have || covered(c),
+                "no glyph for {c:?} (U+{:04X}), which the pack uses {n} times",
+                c as u32
+            );
+        }
+        // The rest is a long tail of foreign scripts in a few etymologies —
+        // Khmer, Arabic, Devanagari — which are out of scope for this app.
+        let coverage = 100.0 * (total - missing) as f64 / total as f64;
+        assert!(
+            coverage > 99.99,
+            "font covers only {coverage:.4}% of the pack"
+        );
+    }
+
+    /// The app's own string literals, from the sources that hold UI text.
+    ///
+    /// Read out of the source rather than listed by hand, so a new label is
+    /// covered the moment it is written.
+    fn characters_in_the_interface() -> std::collections::BTreeSet<char> {
+        const SOURCES: [&str; 9] = [
+            include_str!("app.rs"),
+            include_str!("dict.rs"),
+            include_str!("progress.rs"),
+            include_str!("search.rs"),
+            include_str!("ui/mod.rs"),
+            include_str!("ui/lookup.rs"),
+            include_str!("ui/study.rs"),
+            include_str!("ui/map.rs"),
+            include_str!("ui/profile.rs"),
+        ];
+        let mut seen = std::collections::BTreeSet::new();
+        for source in SOURCES {
+            for line in source.lines() {
+                // Prose in a doc comment is never drawn, and several of them
+                // quote the spec's own arrows.
+                if line.trim_start().starts_with("//") {
+                    continue;
+                }
+                let mut in_string = false;
+                let mut escaped = false;
+                for c in line.chars() {
+                    match c {
+                        _ if escaped => escaped = false,
+                        '\\' if in_string => escaped = true,
+                        '"' => in_string = !in_string,
+                        _ if in_string && !c.is_ascii() => {
+                            seen.insert(c);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        seen
+    }
+
+    #[test]
+    fn the_bundled_font_covers_the_interface() {
+        // The dictionary test below checks the *content*. This checks the app's
+        // own labels, which is where the second round of empty boxes came from:
+        // `←`, `→` and `✕` are in no bundled font, and the tab bar's emoji came
+        // from a fallback in a different typeface. Everything the interface
+        // draws now has to be in the one font.
+        let face = ttf_parser::Face::parse(UI_FONT, 0).expect("the bundled font parses");
+        let missing: Vec<char> = characters_in_the_interface()
+            .into_iter()
+            .filter(|c| face.glyph_index(*c).is_none())
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "no glyph for {missing:?} — pick characters the bundled font has, \
+             or spell the label out in words"
+        );
+    }
+
+    #[test]
+    fn every_tab_renders_in_both_themes() {
+        let mut h = Harness::new();
+        for theme in [Theme::Light, Theme::Dark] {
+            h.app.progress.theme = theme;
+            for tab in Tab::ALL {
+                h.on(tab);
+                assert_eq!(h.app.tab(), tab);
+            }
+        }
+    }
+
+    #[test]
+    fn the_bar_runs_study_map_lookup_you() {
+        assert_eq!(Tab::ALL, [Tab::Study, Tab::Map, Tab::Lookup, Tab::Profile]);
+        // Reordering the bar must not change where the app opens.
+        assert_eq!(Tab::default(), Tab::Lookup);
+        assert_eq!(Harness::new().app.tab(), Tab::Lookup);
+        // Every tab needs its own icon, or the bar is ambiguous.
+        let icons: std::collections::BTreeSet<_> =
+            Tab::ALL.iter().map(|t| format!("{:?}", t.icon())).collect();
+        assert_eq!(icons.len(), Tab::ALL.len());
+    }
+
+    #[test]
+    fn the_app_starts_light() {
+        let h = Harness::new();
+        assert_eq!(h.app.progress.theme, Theme::Light);
+        assert_eq!(h.ctx.theme(), egui::Theme::Light, "first frame drew dark");
+    }
+
+    #[test]
+    fn switching_the_theme_takes_effect_and_is_saved() {
+        let mut h = Harness::new();
+        h.app.progress.theme = Theme::Dark;
+        h.settle();
+        assert_eq!(h.ctx.theme(), egui::Theme::Dark);
+
+        // The choice rides along with the rest of the saved progress.
+        let text = ron::to_string(&h.app.progress).expect("serialises");
+        let back: Progress = ron::from_str(&text).expect("deserialises");
+        assert_eq!(back.theme, Theme::Dark);
+
+        h.app.progress.theme = Theme::Light;
+        h.settle();
+        assert_eq!(h.ctx.theme(), egui::Theme::Light);
+    }
+
+    #[test]
+    fn typing_in_the_search_box_finds_a_word() {
+        let mut h = Harness::new();
+        h.on(Tab::Lookup);
+        h.type_text("decision");
+        h.settle();
+        let hits = h.app.lookup.hits();
+        assert!(!hits.is_empty(), "typing produced no results");
+        assert_eq!(h.app.dict.word(hits[0].word).text, "decision");
+    }
+
+    #[test]
+    fn a_typo_still_finds_the_word() {
+        let mut h = Harness::new();
+        h.on(Tab::Lookup);
+        h.type_text("teh");
+        h.settle();
+        let found: Vec<&str> = h
+            .app
+            .lookup
+            .hits()
+            .iter()
+            .map(|hit| h.app.dict.word(hit.word).text)
+            .collect();
+        assert!(found.contains(&"the"), "{found:?}");
+    }
+
+    #[test]
+    fn the_word_page_renders_and_its_buttons_change_state() {
+        let mut h = Harness::new();
+        h.on(Tab::Lookup);
+        let word = h.app.dict.exact("decision").unwrap();
+        h.app.lookup.open(word.id);
+        h.settle();
+        assert_eq!(h.app.lookup.open_word(), Some(word.id));
+
+        // "I Know This" is the action bar's first button (spec 1.4).
+        let sense = h.app.dict.sense(word.senses().next().unwrap());
+        assert_eq!(h.app.progress.state(&sense), State::Unexplored);
+        let undo = h
+            .app
+            .progress
+            .set_state(sense.id, State::Known, Source::Manual, h.app.day);
+        h.settle();
+        assert_eq!(h.app.progress.state(&sense), State::Known);
+
+        // …and the Undo in the toast puts it back (spec 1.4).
+        h.app.progress.undo(undo);
+        assert_eq!(h.app.progress.state(&sense), State::Unexplored);
+    }
+
+    #[test]
+    fn a_word_page_renders_for_every_shape_of_entry() {
+        // Phrases, inflection-only entries and gap-filled entries all take
+        // different paths through the page.
+        let mut h = Harness::new();
+        h.on(Tab::Lookup);
+        for word in ["run", "children", "a bit", "hello", "why", "saw", "-gate"] {
+            let Some(found) = h.app.dict.exact(word) else {
+                panic!("{word} is missing from the pack");
             };
-            self.frame(vec![Event::PointerMoved(pos), button(true)]);
-            self.frame(vec![button(false)]);
-        }
-
-        fn press_key(&mut self, key: egui::Key) {
-            self.frame(vec![Event::Key {
-                key,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: Modifiers::default(),
-            }]);
+            h.app.lookup.open(found.id);
+            h.settle();
         }
     }
 
     #[test]
-    fn tapping_the_screen_increases_the_counter() {
+    fn a_quick_test_runs_to_a_verdict() {
         let mut h = Harness::new();
-        assert_eq!(h.app.count(), 0);
+        h.on(Tab::Lookup);
+        let word = h.app.dict.exact("decision").unwrap();
+        h.app.lookup.open(word.id);
+        let sense = h.app.dict.sense(word.senses().next().unwrap());
 
-        for expected in 1..=5 {
-            h.tap(pos2(200.0, 400.0));
-            assert_eq!(h.app.count(), expected);
+        let mut rng = Rng::seeded(4);
+        let mut toast = None;
+        let mut goto = None;
+        let mut open_word = None;
+        let mut shown = Shown::default();
+        let mut ctx = Ctx {
+            dict: &h.app.dict,
+            progress: &mut h.app.progress,
+            rng: &mut rng,
+            day: h.app.day,
+            shown: &mut shown,
+            toast: &mut toast,
+            goto: &mut goto,
+            open_word: &mut open_word,
+            now: 0.0,
+        };
+        h.app.lookup.begin_quick_test(&mut ctx, &sense);
+        h.settle();
+    }
+
+    #[test]
+    fn the_placement_test_renders_and_records_a_frontier() {
+        let mut h = Harness::new();
+        h.on(Tab::Profile);
+        h.app.profile.begin_test(&h.app.dict);
+        h.settle();
+        assert!(h.app.profile.testing());
+
+        // Run the test itself to completion, then check the screen that shows
+        // the result also renders.
+        let mut test = Placement::new(&h.app.dict);
+        while let Some(asked) = test.question() {
+            let pick = asked.sense.map(|_| asked.choice.answer);
+            test.answer(&h.app.dict, pick);
         }
+        let verdict = test.verdict();
+        h.app
+            .progress
+            .apply_placement(verdict.frontier, verdict.theta);
+        h.settle();
+        assert!(h.app.progress.placement_done);
+        assert!(h.app.progress.frontier > 1);
     }
 
     #[test]
-    fn taps_count_anywhere_in_the_central_panel() {
+    fn a_study_session_renders_at_every_level() {
         let mut h = Harness::new();
-        for pos in [
-            pos2(4.0, 796.0),                     // bottom-left corner
-            pos2(396.0, 796.0),                   // bottom-right corner
-            pos2(SCREEN.x / 2.0, SCREEN.y / 2.0), // dead centre
-            pos2(1.0, SCREEN.y / 2.0),            // left edge
-        ] {
-            h.tap(pos);
+        h.app.progress.apply_placement(2_000, 8.0);
+        h.on(Tab::Study);
+
+        // Answering correctly raises a card's exercise level (spec 3.3), and
+        // each level draws a different question. Walk one card up all three,
+        // rendering the session at each step.
+        let sense = h.item(2_100);
+        h.app
+            .progress
+            .start_learning(sense, Source::Manual, h.app.day);
+        let mut levels = vec![h.app.progress.card(sense).unwrap().level];
+        for _ in 0..8 {
+            let day = h.app.progress.card(sense).unwrap().due;
+            let outcome = crate::srs::Outcome {
+                correct: true,
+                hesitated: false,
+                level: 3,
+            };
+            h.app.progress.answer(sense, outcome, day);
+            let level = h.app.progress.card(sense).unwrap().level;
+            if Some(&level) != levels.last() {
+                levels.push(level);
+            }
+            h.app.study.begin_session(&h.app.dict, &h.app.progress, day);
+            h.settle();
         }
-        assert_eq!(h.app.count(), 4);
+        assert_eq!(levels, vec![1, 2, 3], "card did not climb the levels");
+        assert_eq!(h.app.progress.cards().count(), 1);
+        assert!(Session::build(&h.app.dict, &h.app.progress, h.app.day).total() > 0);
     }
 
     #[test]
-    fn the_toolbar_is_not_part_of_the_tap_area() {
+    fn quick_scan_renders_and_answering_clears_the_card() {
         let mut h = Harness::new();
-        h.tap(pos2(200.0, 2.0)); // inside the top panel
-        assert_eq!(h.app.count(), 0);
+        h.app.progress.apply_placement(3_000, 8.0);
+        h.on(Tab::Study);
+        let items = crate::study::quick_scan(&h.app.dict, &h.app.progress, &mut h.app.rng, 5);
+        assert_eq!(items.len(), 5);
+        h.app.study.begin_scan(items);
+        h.settle();
     }
 
     #[test]
-    fn space_and_enter_also_count_as_taps() {
+    fn the_map_renders_and_opens_a_block() {
         let mut h = Harness::new();
-        h.press_key(egui::Key::Space);
-        h.press_key(egui::Key::Enter);
-        assert_eq!(h.app.count(), 2);
+        h.app.progress.apply_placement(4_500, 8.4);
+        h.app
+            .progress
+            .start_learning(h.item(5_000), Source::Manual, h.app.day);
+        h.on(Tab::Map);
+        // The overview, then a block drill-down.
+        h.app.map.open_block(3);
+        h.settle();
+        h.app.map.open_block(24);
+        h.settle();
     }
 
     #[test]
-    fn ripples_expire_instead_of_piling_up() {
+    fn the_map_reflects_what_has_been_learned() {
         let mut h = Harness::new();
-        h.tap(pos2(200.0, 400.0));
-        assert_eq!(h.app.ripples.len(), 1);
+        let counts = h.app.progress.tally(h.app.dict.learn_span(1..1_001));
+        assert_eq!(counts[State::Unexplored as usize], 1_000);
 
-        h.time += f64::from(RIPPLE_LIFETIME) + 0.1;
-        h.frame(vec![]);
-        assert!(h.app.ripples.is_empty());
+        h.app.progress.apply_placement(1_000, 6.9);
+        let counts = h.app.progress.tally(h.app.dict.learn_span(1..1_001));
+        assert_eq!(counts[State::AssumedKnown as usize], 1_000);
+        h.on(Tab::Map);
+    }
+
+    #[test]
+    fn progress_is_saved_and_restored() {
+        let mut h = Harness::new();
+        h.app.progress.apply_placement(2_750, 8.0);
+        let sense = h.item(3_000);
+        h.app
+            .progress
+            .start_learning(sense, Source::Manual, h.app.day);
+
+        // The same round trip eframe's storage performs.
+        let text = ron::to_string(&h.app.progress).expect("serialises");
+        let restored: Progress = ron::from_str(&text).expect("deserialises");
+        assert_eq!(restored.assumed_below, 2_750);
+        assert_eq!(restored.state(&h.app.dict.sense(sense)), State::Learning);
+    }
+
+    #[test]
+    fn a_day_rolling_over_resets_the_session() {
+        let mut h = Harness::new();
+        // Pretend the app was left open overnight: both the cached "today" and
+        // the day the counters belong to are yesterday's.
+        h.app.day -= 1;
+        h.app.progress.roll_to(h.app.day);
+        h.app.progress.new_today = 5;
+        h.app
+            .study
+            .begin_session(&h.app.dict, &h.app.progress, h.app.day);
+
+        h.settle();
+        assert_eq!(h.app.day, progress::today());
+        assert_eq!(h.app.progress.new_today, 0, "counters did not roll over");
     }
 }

@@ -9,6 +9,15 @@
 //! | Web (Wasm) | [`start_web`] in `src/web.rs`, called from `main` |
 
 mod app;
+pub mod dict;
+pub mod placement;
+pub mod progress;
+pub mod quiz;
+pub mod rng;
+pub mod search;
+pub mod srs;
+pub mod study;
+pub mod ui;
 
 pub use app::{APP_NAME, WordTeeApp};
 

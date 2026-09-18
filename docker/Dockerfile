@@ -43,6 +43,9 @@ RUN chmod +x ./scripts/*.sh \
 COPY Cargo.toml Cargo.lock ./
 COPY src/ ./src/
 COPY android/ ./android/
+# The dictionary is `include_bytes!`d into the binary, so it has to be here
+# before the compiler runs. See scripts/build-dict.py.
+COPY assets/ ./assets/
 
 # `--out /out` leaves a directory holding just the finished APK, with no
 # intermediate unaligned copy for the web server to serve by accident.
@@ -70,6 +73,7 @@ RUN rustup target add wasm32-unknown-unknown \
 COPY Cargo.toml Cargo.lock Trunk.toml ./
 COPY src/ ./src/
 COPY web/ ./web/
+COPY assets/ ./assets/
 
 RUN trunk build --release
 
