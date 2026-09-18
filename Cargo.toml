@@ -64,6 +64,9 @@ android_logger = "0.15"
 [dev-dependencies]
 # eframe stores state as RON; the progress round-trip test checks that format.
 ron = "0.11"
+# Reads the bundled font's character map, so a test can prove it covers every
+# character the dictionary is able to put on screen.
+ttf-parser = "0.25"
 
 [profile.release]
 lto = "thin"

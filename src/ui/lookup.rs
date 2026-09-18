@@ -1,4 +1,4 @@
-//! Tra từ — the search box, the results list and the word page.
+//! Look up — the search box, the results list and the word page.
 //!
 //! This is spec 1's "Acquisition Funnel": looking a word up is where learning
 //! starts, so every sense on the page carries its own state and its own three
@@ -103,7 +103,7 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
     let field = ui.add_sized(
         [ui.available_width(), 38.0],
         egui::TextEdit::singleline(&mut state.query)
-            .hint_text("Tra từ tiếng Anh, hoặc gõ tiếng Việt có dấu…")
+            .hint_text("Search in English, or type Vietnamese with tone marks…")
             .font(egui::TextStyle::Heading),
     );
     if state.query.is_empty() && state.searched.is_empty() {
@@ -130,9 +130,9 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
     if state.results.is_empty() {
         ui.add_space(24.0);
         ui.vertical_centered(|ui| {
-            ui.label(RichText::new("Không tìm thấy từ nào.").color(ui::MUTED));
+            ui.label(RichText::new("Nothing found.").color(ui::MUTED));
             ui.label(
-                RichText::new("Thử bỏ dấu, hoặc kiểm tra chính tả.")
+                RichText::new("Try it without tone marks, or check the spelling.")
                     .size(12.0)
                     .color(ui::MUTED),
             );
@@ -151,7 +151,7 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
                         ui.label(RichText::new(word.ipa).size(13.0).color(ui::MUTED));
                     }
                     if word.kind == Kind::Phrase {
-                        ui::chip(ui, "cụm từ", ui::ACCENT);
+                        ui::chip(ui, "phrase", ui::ACCENT);
                     }
                     if hit.tier != Tier::Exact {
                         ui::chip(ui, hit.tier.label(), ui::MUTED);
@@ -160,9 +160,12 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
                 // Spec 1.1: a lemma reached through an inflected form says so.
                 if let Some(form) = &hit.form {
                     ui.label(
-                        RichText::new(format!("“{}” là {} của từ này", form.surface, form.tag))
-                            .size(12.0)
-                            .color(ui::ACCENT),
+                        RichText::new(format!(
+                            "“{}” is the {} of this word",
+                            form.surface, form.tag
+                        ))
+                        .size(12.0)
+                        .color(ui::ACCENT),
                     );
                 }
                 let gloss: Vec<&str> = word
@@ -184,7 +187,7 @@ fn search_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
 
         // Spec 5.2: the Vietnamese → English direction.
         if !state.results.reverse.is_empty() {
-            ui::section(ui, "Việt → Anh", |ui| {
+            ui::section(ui, "Vietnamese → English", |ui| {
                 for &id in &state.results.reverse {
                     let sense = ctx.dict.sense(id);
                     let word = ctx.dict.word(sense.word);
@@ -216,7 +219,7 @@ fn idle_hint(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
         ui.label(RichText::new("🔍").size(40.0));
         ui.label(
             RichText::new(format!(
-                "{} mục từ, {} nghĩa — tra được khi không có mạng",
+                "{} headwords, {} senses — works with no connection",
                 ui::thousands(ctx.dict.word_count()),
                 ui::thousands(ctx.dict.sense_count())
             ))
@@ -225,7 +228,7 @@ fn idle_hint(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
         );
     });
     ui.add_space(10.0);
-    ui::section(ui, "Thử tra", |ui| {
+    ui::section(ui, "Try one", |ui| {
         ui.horizontal_wrapped(|ui| {
             for word in ["decision", "swimming", "teh", "run", "quyết định"] {
                 if ui.button(word).clicked() {
@@ -235,8 +238,9 @@ fn idle_hint(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState) {
         });
         ui.label(
             RichText::new(
-                "Gõ sai vẫn ra (teh → the), gõ dạng chia vẫn ra từ gốc \
-                 (swimming → swim), gõ tiếng Việt có dấu thì tra ngược.",
+                "Typos still find the word (teh → the), so do inflected forms \
+                 (swimming → swim), and Vietnamese with tone marks searches \
+                 the definitions instead.",
             )
             .size(12.0)
             .color(ui::MUTED),
@@ -293,20 +297,20 @@ fn word_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Word
                 ui::band_chip(ui, sense.band(), sense.rank);
             }
             if word.kind == Kind::Phrase {
-                ui::chip(ui, "cụm từ", ui::ACCENT);
+                ui::chip(ui, "phrase", ui::ACCENT);
             }
             if word.offensive {
-                ui::chip(ui, "thô tục — chỉ tra cứu", ui::BAD);
+                ui::chip(ui, "coarse — lookup only", ui::BAD);
             }
         });
         // Spec 1.1: "cũng là dạng của …".
         let forms = search::forms_of(ctx.dict, word.norm);
         if !forms.is_empty() {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("cũng là").size(12.0).color(ui::MUTED));
+                ui.label(RichText::new("also").size(12.0).color(ui::MUTED));
                 for (lemma, tag) in forms {
                     if ui
-                        .link(RichText::new(format!("{} của {}", tag, lemma.text)).size(12.0))
+                        .link(RichText::new(format!("{} of {}", tag, lemma.text)).size(12.0))
                         .clicked()
                     {
                         state.open(lemma.id);
@@ -327,7 +331,8 @@ fn word_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Word
         if meanings.is_empty() {
             ui.add_space(12.0);
             ui.label(
-                RichText::new("Mục từ này chỉ là một dạng chia của từ khác.").color(ui::MUTED),
+                RichText::new("This entry is only an inflected form of another word.")
+                    .color(ui::MUTED),
             );
         }
         // --- sense cards (spec 1.2: one sense, one learning item) ---
@@ -394,7 +399,7 @@ fn usage_block(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Wo
         return;
     }
 
-    ui::section(ui, "Cách dùng", |ui| {
+    ui::section(ui, "Usage", |ui| {
         for kind in [
             Relation::Derived,
             Relation::Synonym,
@@ -433,7 +438,7 @@ fn usage_block(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Wo
         }
         if !phrases.is_empty() {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Cụm từ:").size(12.5).color(ui::MUTED));
+                ui.label(RichText::new("Phrases:").size(12.5).color(ui::MUTED));
                 for phrase in phrases {
                     if ui.link(RichText::new(phrase.text).size(13.0)).clicked() {
                         state.open(phrase.id);
@@ -453,25 +458,25 @@ fn action_bar(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, sense: 
             if c[0]
                 .add_sized(
                     [c[0].available_width(), 38.0],
-                    egui::Button::new("Tôi đã biết"),
+                    egui::Button::new("I know this"),
                 )
                 .clicked()
             {
                 let undo = ctx
                     .progress
                     .set_state(sense.id, State::Known, Source::Manual, ctx.day);
-                ctx.say_undoable("Đã đánh dấu là đã biết.", undo);
+                ctx.say_undoable("Marked as known.", undo);
             }
             if c[1]
                 .add_sized(
                     [c[1].available_width(), 38.0],
-                    egui::Button::new("Kiểm tra nhanh"),
+                    egui::Button::new("Quick test"),
                 )
                 .clicked()
             {
                 state.test = Some(build_quick_test(ctx, sense));
             }
-            let learn = egui::Button::new(RichText::new("Học từ này").color(ui::ACCENT).strong());
+            let learn = egui::Button::new(RichText::new("Learn this").color(ui::ACCENT).strong());
             if c[2]
                 .add_sized([c[2].available_width(), 38.0], learn)
                 .clicked()
@@ -479,16 +484,12 @@ fn action_bar(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, sense: 
                 let undo = ctx
                     .progress
                     .start_learning(sense.id, Source::Manual, ctx.day);
-                ctx.say_undoable("Đã thêm vào danh sách học.", undo);
+                ctx.say_undoable("Added to your learning list.", undo);
             }
         });
         if current != State::Unexplored {
             ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new("Nghĩa đang chọn:")
-                        .size(11.5)
-                        .color(ui::MUTED),
-                );
+                ui.label(RichText::new("Selected sense:").size(11.5).color(ui::MUTED));
                 ui::state_chip(ui, current);
             });
         }
@@ -529,9 +530,9 @@ fn quick_test_page(ui: &mut egui::Ui, ctx: &mut Ctx, test: &mut QuickTest) -> bo
 
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Kiểm tra nhanh").size(18.0).strong());
+        ui.label(RichText::new("Quick test").size(18.0).strong());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.small_button("Thoát").clicked() {
+            if ui.small_button("Exit").clicked() {
                 finish = true;
             }
             ui.label(RichText::new(format!("{}/2", (test.step + 1).min(2))).color(ui::MUTED));
@@ -544,7 +545,7 @@ fn quick_test_page(ui: &mut egui::Ui, ctx: &mut Ctx, test: &mut QuickTest) -> bo
             let answered = match &test.first {
                 Exercise::Fill(gap) => fill_question(ui, gap, &mut test.typed),
                 Exercise::PickWord(choice) => {
-                    pick_question(ui, choice, &mut test.picked, "Từ nào mang nghĩa này?")
+                    pick_question(ui, choice, &mut test.picked, "Which word means this?")
                 }
                 // No usable question: skip straight to the meaning check.
                 _ => Some(true),
@@ -562,7 +563,7 @@ fn quick_test_page(ui: &mut egui::Ui, ctx: &mut Ctx, test: &mut QuickTest) -> bo
                 ui,
                 &test.second,
                 &mut test.picked,
-                &format!("“{}” nghĩa là gì?", word.text),
+                &format!("What does “{}” mean?", word.text),
             ) {
                 test.perfect &= correct;
                 test.step = 2;
@@ -575,16 +576,12 @@ fn quick_test_page(ui: &mut egui::Ui, ctx: &mut Ctx, test: &mut QuickTest) -> bo
         // Spec 1.4: both right -> Known (source = test); anything wrong ->
         // Learning. Either way with an Undo.
         let (state, source, message) = if test.perfect {
-            (
-                State::Known,
-                Source::Test,
-                "Đúng cả hai câu — đã đánh dấu là đã biết.",
-            )
+            (State::Known, Source::Test, "Both right — marked as known.")
         } else {
             (
                 State::Learning,
                 Source::Study,
-                "Chưa chắc rồi — đã thêm vào danh sách học.",
+                "Not quite — added to your learning list.",
             )
         };
         let undo = ctx.progress.set_state(test.sense, state, source, ctx.day);
@@ -598,7 +595,7 @@ fn quick_test_page(ui: &mut egui::Ui, ctx: &mut Ctx, test: &mut QuickTest) -> bo
 fn fill_question(ui: &mut egui::Ui, gap: &Cloze, typed: &mut String) -> Option<bool> {
     ui::card(ui, None, |ui| {
         ui.label(
-            RichText::new("Điền từ còn thiếu:")
+            RichText::new("Fill in the missing word:")
                 .size(13.0)
                 .color(ui::MUTED),
         );
@@ -608,10 +605,10 @@ fn fill_question(ui: &mut egui::Ui, gap: &Cloze, typed: &mut String) -> Option<b
     ui.add_space(8.0);
     let field = ui.add_sized(
         [ui.available_width(), 38.0],
-        egui::TextEdit::singleline(typed).hint_text(format!("bắt đầu bằng “{}”", gap.hint)),
+        egui::TextEdit::singleline(typed).hint_text(format!("starts with “{}”", gap.hint)),
     );
     let submitted = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    let clicked = ui::wide_button(ui, "Trả lời", ui::ACCENT).clicked();
+    let clicked = ui::wide_button(ui, "Answer", ui::ACCENT).clicked();
     (submitted || clicked).then(|| gap.accepts(typed))
 }
 
@@ -642,7 +639,7 @@ fn pick_question(
     }
     let p = (*picked)?;
     ui.add_space(6.0);
-    if ui::wide_button(ui, "Tiếp tục", ui::ACCENT).clicked() {
+    if ui::wide_button(ui, "Continue", ui::ACCENT).clicked() {
         return Some(p == choice.answer);
     }
     None

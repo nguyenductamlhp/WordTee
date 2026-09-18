@@ -64,12 +64,12 @@ pub enum State {
 impl State {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Unexplored => "Chưa gặp",
-            Self::AssumedKnown => "Có thể đã biết",
-            Self::Known => "Đã biết",
-            Self::Learning => "Đang học",
-            Self::Review => "Đang ôn",
-            Self::Mastered => "Nhớ vững",
+            Self::Unexplored => "New",
+            Self::AssumedKnown => "Probably known",
+            Self::Known => "Known",
+            Self::Learning => "Learning",
+            Self::Review => "In review",
+            Self::Mastered => "Mastered",
         }
     }
 
@@ -358,7 +358,7 @@ impl Progress {
         Undo {
             sense,
             before,
-            message: format!("Đã chuyển sang “{}”", state.label()),
+            message: format!("Moved to “{}”", state.label()),
         }
     }
 

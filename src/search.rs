@@ -32,10 +32,10 @@ pub enum Tier {
 impl Tier {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Exact => "khớp chính xác",
-            Self::Inflection => "dạng biến thể",
-            Self::Prefix => "bắt đầu bằng",
-            Self::Fuzzy => "gần giống",
+            Self::Exact => "exact match",
+            Self::Inflection => "inflected form",
+            Self::Prefix => "starts with",
+            Self::Fuzzy => "close match",
         }
     }
 }
@@ -862,12 +862,12 @@ const IRREGULAR: [(&str, &str, bool); 201] = [
 /// These rules cover the regular remainder. Every candidate is checked against
 /// the dictionary before it is offered, so an over-eager rule costs nothing.
 fn rule_lemmas(norm: &str) -> Vec<(String, &'static str)> {
-    const PLURAL: &str = "số nhiều / ngôi 3 số ít";
-    const PAST: &str = "quá khứ / phân từ II";
-    const GERUND: &str = "hiện tại phân từ / danh động từ";
-    const COMPARATIVE: &str = "so sánh hơn";
-    const SUPERLATIVE: &str = "so sánh nhất";
-    const ADVERB: &str = "trạng từ";
+    const PLURAL: &str = "plural / 3rd person singular";
+    const PAST: &str = "past / past participle";
+    const GERUND: &str = "present participle / gerund";
+    const COMPARATIVE: &str = "comparative";
+    const SUPERLATIVE: &str = "superlative";
+    const ADVERB: &str = "adverb";
 
     let n = norm.chars().count();
     let mut out: Vec<(String, &'static str)> = Vec::new();

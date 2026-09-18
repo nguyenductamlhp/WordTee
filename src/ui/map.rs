@@ -1,4 +1,4 @@
-//! Bản đồ — spec 2.3's knowledge map: 25 blocks of 1.000 learning items, each
+//! Map — spec 2.3's knowledge map: 25 blocks of 1,000 learning items, each
 //! with a four-colour bar, and a drill-down into any one of them.
 
 use eframe::egui::{self, RichText};
@@ -61,10 +61,10 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
 
 fn overview(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
     ui.add_space(6.0);
-    ui.label(RichText::new("Bản đồ tri thức").size(20.0).strong());
+    ui.label(RichText::new("Knowledge map").size(20.0).strong());
     ui.label(
         RichText::new(format!(
-            "{} đơn vị học, chia thành {} khối 1.000",
+            "{} learning items, in {} blocks of 1,000",
             ui::thousands(ctx.dict.learn_count()),
             BLOCKS
         ))
@@ -108,7 +108,7 @@ fn overview(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
                     );
                     ui::chip(ui, band.label(), ui::MUTED);
                     if block == frontier_block {
-                        ui::chip(ui, "đang ở đây", ui::ACCENT);
+                        ui::chip(ui, "you are here", ui::ACCENT);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let percent = (known * 100).checked_div(total).unwrap_or(0);
@@ -135,10 +135,10 @@ fn overview(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
 fn legend(ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         for (color, text) in [
-            (ui::C_KNOWN, "Đã biết / Nhớ vững"),
-            (ui::C_ASSUMED, "Suy ra (kẻ sọc)"),
-            (ui::C_LEARNING, "Đang học / ôn"),
-            (ui::C_UNEXPLORED, "Chưa gặp"),
+            (ui::C_KNOWN, "Known / Mastered"),
+            (ui::C_ASSUMED, "Inferred (hatched)"),
+            (ui::C_LEARNING, "Learning / reviewing"),
+            (ui::C_UNEXPLORED, "New"),
         ] {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(11.0, 11.0), egui::Sense::hover());
             ui.painter().rect_filled(rect, 2.0, color);
@@ -173,11 +173,11 @@ fn block_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState, block: u32
         // Spec 2.3: filter the list, and scan this block.
         ui.horizontal_wrapped(|ui| {
             for (label, want) in [
-                ("Tất cả", None),
-                ("Chưa gặp", Some(State::Unexplored)),
+                ("All", None),
+                ("New", Some(State::Unexplored)),
                 ("Suy ra", Some(State::AssumedKnown)),
-                ("Đang học", Some(State::Learning)),
-                ("Đã biết", Some(State::Known)),
+                ("Learning", Some(State::Learning)),
+                ("Known", Some(State::Known)),
             ] {
                 if ui
                     .selectable_label(state.filter == want, RichText::new(label).size(12.5))
@@ -187,9 +187,9 @@ fn block_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState, block: u32
                 }
             }
         });
-        if ui.button("⚡ Quét nhanh khối này").clicked() {
+        if ui.button("⚡ Quick scan this block").clicked() {
             *ctx.goto = Some(Tab::Study);
-            ctx.say("Mở tab Học để quét nhanh.");
+            ctx.say("Open the Study tab to run a quick scan.");
         }
         ui.add_space(4.0);
     });
@@ -238,11 +238,11 @@ fn block_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState, block: u32
         if shown == 0 {
             ui.add_space(16.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Không có mục nào ở trạng thái này.").color(ui::MUTED));
+                ui.label(RichText::new("Nothing in this state.").color(ui::MUTED));
             });
         } else if shown >= PAGE {
             ui.label(
-                RichText::new(format!("Hiển thị {PAGE} mục đầu tiên."))
+                RichText::new(format!("Showing the first {PAGE} items."))
                     .size(12.0)
                     .color(ui::MUTED),
             );
@@ -279,7 +279,7 @@ pub fn scan_card(ui: &mut egui::Ui, ctx: &mut Ctx, sense: SenseId) -> bool {
         if c[0]
             .add_sized(
                 [c[0].available_width(), 46.0],
-                egui::Button::new(RichText::new("Chưa biết").color(ui::WARN)),
+                egui::Button::new(RichText::new("Don't know").color(ui::WARN)),
             )
             .clicked()
         {
@@ -291,7 +291,7 @@ pub fn scan_card(ui: &mut egui::Ui, ctx: &mut Ctx, sense: SenseId) -> bool {
         if c[1]
             .add_sized(
                 [c[1].available_width(), 46.0],
-                egui::Button::new(RichText::new("Đã biết").color(ui::GOOD)),
+                egui::Button::new(RichText::new("Known").color(ui::GOOD)),
             )
             .clicked()
         {
@@ -304,7 +304,7 @@ pub fn scan_card(ui: &mut egui::Ui, ctx: &mut Ctx, sense: SenseId) -> bool {
         ctx.progress.scanned_today += 1;
     }
     ui.add_space(8.0);
-    ui.collapsing("Xem nghĩa", |ui| {
+    ui.collapsing("Show meaning", |ui| {
         ui.label(RichText::new(sense.def).size(14.0));
         if !sense.example.is_empty() {
             ui.label(

@@ -52,18 +52,18 @@ impl Pos {
     pub fn label(self) -> &'static str {
         const LABEL: [&str; 13] = [
             "",
-            "danh từ",
-            "động từ",
-            "tính từ",
-            "trạng từ",
-            "giới từ",
-            "liên từ",
-            "đại từ",
-            "số từ",
-            "thán từ",
-            "thành ngữ",
-            "phụ tố",
-            "khác",
+            "noun",
+            "verb",
+            "adjective",
+            "adverb",
+            "preposition",
+            "conjunction",
+            "pronoun",
+            "numeral",
+            "interjection",
+            "idiom",
+            "affix",
+            "other",
         ];
         LABEL.get(self.0 as usize).copied().unwrap_or("")
     }
@@ -84,17 +84,20 @@ pub struct FormTag(u8);
 impl FormTag {
     pub fn label(self) -> &'static str {
         const LABEL: [&str; 9] = [
-            "số nhiều",
-            "ngôi 3 số ít",
-            "quá khứ / phân từ II",
-            "hiện tại phân từ / danh động từ",
-            "so sánh hơn",
-            "so sánh nhất",
-            "dạng viết khác",
-            "viết tắt",
-            "sai chính tả",
+            "plural",
+            "3rd person singular",
+            "past / past participle",
+            "present participle / gerund",
+            "comparative",
+            "superlative",
+            "variant spelling",
+            "abbreviation",
+            "misspelling",
         ];
-        LABEL.get(self.0 as usize).copied().unwrap_or("dạng khác")
+        LABEL
+            .get(self.0 as usize)
+            .copied()
+            .unwrap_or("another form")
     }
 }
 
@@ -111,10 +114,10 @@ pub enum Relation {
 impl Relation {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Synonym => "Đồng nghĩa",
-            Self::Antonym => "Trái nghĩa",
-            Self::Derived => "Họ từ",
-            Self::Related => "Liên quan",
+            Self::Synonym => "Synonyms",
+            Self::Antonym => "Antonyms",
+            Self::Derived => "Word family",
+            Self::Related => "Related",
         }
     }
 }
@@ -143,20 +146,20 @@ impl Band {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Core => "Cốt lõi",
-            Self::Advanced => "Nâng cao",
-            Self::Academic => "Học thuật",
-            Self::Rare => "Hiếm",
+            Self::Core => "Core",
+            Self::Advanced => "Advanced",
+            Self::Academic => "Academic",
+            Self::Rare => "Rare",
         }
     }
 
     /// Rank range covered, for the map legend.
     pub fn range(self) -> &'static str {
         match self {
-            Self::Core => "1 – 3.000",
-            Self::Advanced => "3.001 – 10.000",
-            Self::Academic => "10.001 – 25.000",
-            Self::Rare => "ngoài danh sách học",
+            Self::Core => "1 – 3,000",
+            Self::Advanced => "3,001 – 10,000",
+            Self::Academic => "10,001 – 25,000",
+            Self::Rare => "outside the learning list",
         }
     }
 }

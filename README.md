@@ -9,29 +9,32 @@ Everything is offline. The dictionary ships inside the binary, so there is no
 server, no account and no network call at any point. The same Rust code runs as
 a native desktop binary, as an Android APK, and as WebAssembly in a browser.
 
+The interface is in English; the meanings are Vietnamese, which is what the
+dictionary holds.
+
 ```
-┌──────────────────────────────┐
-│ WordTee              🔥 4 12 │
-├──────────────────────────────┤
-│ 🔍 swimming                  │
-├──────────────────────────────┤
-│ swim  /ˈswɪm/  dạng biến thể │
-│ “swimming” là hiện tại phân  │
-│ từ / danh động từ của từ này │
-│ ──────────────────────────── │
-│ 1. [v.] Đang học   Cốt lõi   │
-│    Bơi, lội.                 │
-│    to swim across a river    │
-├──────────────────────────────┤
-│ [Tôi đã biết][Kiểm tra][Học] │
-├──────────────────────────────┤
-│ 🔍Tra từ 🎓Học 🗺Bản đồ 👤Tôi│
-└──────────────────────────────┘
+┌────────────────────────────────┐
+│ WordTee                🔥 4 12 │
+├────────────────────────────────┤
+│ 🔍 swimming                    │
+├────────────────────────────────┤
+│ swim  /ˈswɪm/   inflected form │
+│ “swimming” is the present      │
+│ participle / gerund of this    │
+│ ────────────────────────────── │
+│ 1. [v.] Learning · Core #2,471 │
+│    Bơi, lội.                   │
+│    to swim across a river      │
+├────────────────────────────────┤
+│ [I know] [Quick test] [Learn]  │
+├────────────────────────────────┤
+│ 🔍Look up 🎓Study 🗺Map 👤You  │
+└────────────────────────────────┘
 ```
 
 ## What it does
 
-**Tra từ — search (spec 1.1).** Four match tiers, ranked by
+**Search (spec 1.1).** Four match tiers, ranked by
 `tier → edit distance → personal boost → frequency`, never alphabetically:
 
 | Tier | Example |
@@ -48,18 +51,18 @@ thousand most frequent English words and none of them is reachable any other
 way.
 
 An exact hit is never displaced by a lemma, so `news` and `glasses` keep their
-own entry with a "cũng là dạng của …" line underneath. Typing Vietnamese with
+own entry, with an "also the plural of …" line underneath. Typing Vietnamese with
 diacritics searches the definitions instead (`quyết định` → decide, decision).
 Worst case measured at 30 ms against the spec's 50 ms budget, and a keystroke
 while typing costs 6 ms — `cargo run --release --example bench` prints the lot.
 
 **The word page (spec 1.3, 1.4).** One card per sense, each with its own state,
 because spec 1.2 treats a *sense* as the unit of learning, not a word. Three
-buttons act on the sense you are looking at: **Tôi đã biết**, **Kiểm tra nhanh**
-and **Học từ này**, each with a five-second Undo. Quick Test asks two questions,
+buttons act on the sense you are looking at: **I know this**, **Quick test**
+and **Learn this**, each with a five-second Undo. Quick Test asks two questions,
 and the gap-fill never re-uses a sentence already on screen.
 
-**Bài test đầu vào — placement (spec 2.2).** An adaptive test over a Rasch/IRT
+**Placement (spec 2.2).** An adaptive test over a Rasch/IRT
 model rather than a binary search, because a binary search cannot recover from
 one lucky guess. θ and item difficulty share one scale, `ln(rank)`, so the
 frontier follows in closed form. Every fifth question is an invented word that
@@ -67,15 +70,15 @@ is not within two edits of any real one; claiming to know those is measured as a
 false-alarm rate and corrected for, and a user who guesses at everything gets no
 frontier at all.
 
-**Học — study (spec 2.3, 3.x).** Smart Feeding scores unexplored items in a
+**Study (spec 2.3, 3.x).** Smart Feeding scores unexplored items in a
 500-wide window above the frontier by `RankScore × Relevance`, and a session
 never contains two senses of one word or a synonym/antonym pair. Reviews are
 scheduled by FSRS-5 with a retention target you can set between 0,8 and 0,95;
 you never grade yourself, the grade comes from how the exercise went. Exercises
 climb three levels as a card stabilises: recognise → recall → produce.
 
-**Bản đồ — the map (spec 2.3).** 25 blocks of 1.000 items, each with the spec's
-four-colour bar. Inferred progress is hatched so it never reads as confirmed.
+**Map (spec 2.3).** 25 blocks of 1,000 items, each with the spec's four-colour
+bar. Inferred progress is hatched so it never reads as confirmed.
 
 ## The dictionary
 
@@ -86,6 +89,12 @@ into one file, `assets/wordtee.dict`:
 | --- | --- | --- |
 | [minhqnd/dictionary](https://github.com/minhqnd/dictionary) v2.0.0 (179 MB SQLite, from Wiktionary and TVTD) | headwords, senses, IPA, examples, synonyms | CC BY-SA |
 | [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) `en_50k` (OpenSubtitles) | frequency ranking | CC BY-SA |
+
+The app also bundles [Noto Sans](https://fonts.google.com/noto) (OFL 1.1, in
+`assets/fonts/`). egui's own font covers only 89% of what this app draws: it has
+neither the Vietnamese tone marks of Latin Extended Additional nor the IPA, so
+`ừ`, `ế`, `ə` and `ɪ` all rendered as empty boxes. Noto Sans covers 99,99% of
+the pack, and a test asserts it stays that way.
 
 ```sh
 python3 scripts/build-dict.py        # ~19 MB out, a few minutes the first time
@@ -281,6 +290,7 @@ the better shape — ask and I can add that.
 | Path | What it is |
 | --- | --- |
 | `assets/wordtee.dict` | The dictionary, 19 MB, `include_bytes!`d into the binary |
+| `assets/fonts/` | Noto Sans, the one font that covers both Vietnamese and IPA |
 | `scripts/build-dict.py` | Builds that file from the two upstream sources |
 | `src/dict.rs` | Zero-copy reader for the pack |
 | `src/search.rs` | The four-tier lookup pipeline (spec 1.1) |

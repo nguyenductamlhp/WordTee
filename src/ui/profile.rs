@@ -1,4 +1,4 @@
-//! Tôi — the placement test (spec 2.2), the settings spec 3.2 and 3.6 expose,
+//! You — the placement test (spec 2.2), the settings spec 3.2 and 3.6 expose,
 //! and the data credits spec 4.3 requires.
 
 use eframe::egui::{self, RichText};
@@ -47,12 +47,12 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
 
         // --- where the user stands ---
         ui::card(ui, None, |ui| {
-            ui.label(RichText::new("Trình độ").size(17.0).strong());
+            ui.label(RichText::new("Level").size(17.0).strong());
             ui.add_space(4.0);
             if ctx.progress.placement_done {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(
-                        RichText::new("Đường chân trời từ vựng:")
+                        RichText::new("Vocabulary frontier:")
                             .size(13.0)
                             .color(ui::MUTED),
                     );
@@ -65,7 +65,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                 });
                 ui.label(
                     RichText::new(format!(
-                        "Đang học từ #{} trở đi.",
+                        "Learning from #{} onwards.",
                         ui::thousands(ctx.progress.frontier)
                     ))
                     .size(12.5)
@@ -73,16 +73,16 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                 );
             } else {
                 ui.label(
-                    RichText::new("Chưa làm bài test đầu vào.")
+                    RichText::new("Placement test not taken yet.")
                         .size(13.0)
                         .color(ui::MUTED),
                 );
             }
             ui.add_space(8.0);
             let label = if ctx.progress.placement_done {
-                "Làm lại bài test"
+                "Retake the test"
             } else {
-                "Làm bài test đầu vào"
+                "Take the placement test"
             };
             if ui::wide_button(ui, label, ui::ACCENT).clicked() {
                 state.test = Some(Placement::new(ctx.dict));
@@ -90,7 +90,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             }
             ui.label(
                 RichText::new(
-                    "15–25 câu, có cả từ giả để phát hiện đoán mò. Làm lại lúc nào cũng được.",
+                    "15–25 questions, with invented words mixed in to catch guessing. Retake it any time.",
                 )
                 .size(11.5)
                 .color(ui::MUTED),
@@ -103,7 +103,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             .progress
             .tally(ctx.dict.learn_span(1..ctx.dict.learn_count() + 1));
         ui::card(ui, None, |ui| {
-            ui.label(RichText::new("Tiến độ").size(17.0).strong());
+            ui.label(RichText::new("Progress").size(17.0).strong());
             ui.add_space(6.0);
             ui::progress_bar(ui, counts, 14.0);
             ui.add_space(6.0);
@@ -131,7 +131,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui.add_space(4.0);
             ui.label(
                 RichText::new(format!(
-                    "🔥 chuỗi {} ngày · kỷ lục {}",
+                    "🔥 {} day streak · best {}",
                     ctx.progress.streak, ctx.progress.best_streak
                 ))
                 .size(12.5)
@@ -142,10 +142,10 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         // --- settings (spec 3.2, 3.6) ---
         ui.add_space(8.0);
         ui::card(ui, None, |ui| {
-            ui.label(RichText::new("Cài đặt").size(17.0).strong());
+            ui.label(RichText::new("Settings").size(17.0).strong());
             ui.add_space(6.0);
 
-            ui.label(RichText::new("Từ mới mỗi ngày").size(13.0));
+            ui.label(RichText::new("New words per day").size(13.0));
             ui.horizontal(|ui| {
                 for goal in [5u32, 10, 20] {
                     let on = ctx.progress.daily_goal == goal;
@@ -157,14 +157,14 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
 
             ui.add_space(8.0);
             // Spec 3.2: desired retention, adjustable between 0,8 and 0,95.
-            ui.label(RichText::new("Tỷ lệ nhớ mục tiêu").size(13.0));
+            ui.label(RichText::new("Target retention").size(13.0));
             ui.add(
                 egui::Slider::new(&mut ctx.progress.retention, 0.8..=0.95)
                     .fixed_decimals(2)
                     .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
             );
             ui.label(
-                RichText::new("Cao hơn = nhớ chắc hơn nhưng phải ôn dày hơn.")
+                RichText::new("Higher means firmer recall, but more reviews to sit through.")
                     .size(11.5)
                     .color(ui::MUTED),
             );
@@ -172,16 +172,16 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             // Spec 2.3, rule 3: the Skip Band.
             if ctx.progress.placement_done {
                 ui.add_space(8.0);
-                ui.label(RichText::new("Bỏ qua một dải rank").size(13.0));
+                ui.label(RichText::new("Skip a rank band").size(13.0));
                 ui.horizontal_wrapped(|ui| {
                     for jump in [1_000u32, 3_000] {
                         if ui.button(format!("+{}", ui::thousands(jump))).clicked() {
                             ctx.progress.frontier =
                                 (ctx.progress.frontier + jump).min(ctx.dict.learn_count());
-                            ctx.say("Đã nhảy lên dải cao hơn. Dải bỏ qua vẫn được quét nhanh.");
+                            ctx.say("Jumped to a higher band. The skipped range still comes up in Quick scan.");
                         }
                     }
-                    if ui.button("Đặt lại").clicked() {
+                    if ui.button("Reset").clicked() {
                         ctx.progress.frontier = ctx.progress.assumed_below + 1;
                     }
                 });
@@ -191,11 +191,11 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         // --- credits (spec 4.3) ---
         ui.add_space(8.0);
         ui::card(ui, None, |ui| {
-            ui.label(RichText::new("Nguồn dữ liệu").size(17.0).strong());
+            ui.label(RichText::new("Data sources").size(17.0).strong());
             ui.add_space(4.0);
             ui.label(
                 RichText::new(format!(
-                    "Từ điển: {} mục từ · {} nghĩa · {} đơn vị học",
+                    "Dictionary: {} headwords · {} senses · {} learning items",
                     ui::thousands(ctx.dict.word_count()),
                     ui::thousands(ctx.dict.sense_count()),
                     ui::thousands(ctx.dict.learn_count())
@@ -206,16 +206,17 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui.add_space(4.0);
             for (what, source, license) in [
                 (
-                    "Mục từ và nghĩa",
+                    "Headwords and senses",
                     "minhqnd/dictionary (Wiktionary, TVTD)",
                     "CC BY-SA",
                 ),
                 (
-                    "Tần suất từ",
+                    "Word frequency",
                     "hermitdave/FrequencyWords (OpenSubtitles)",
                     "CC BY-SA",
                 ),
-                ("Lịch ôn tập", "FSRS-5", "MIT"),
+                ("Review scheduling", "FSRS-5", "MIT"),
+                ("Typeface", "Noto Sans", "OFL 1.1"),
             ] {
                 ui.label(
                     RichText::new(format!("• {what}: {source} — {license}"))
@@ -226,7 +227,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui.add_space(4.0);
             ui.label(
                 RichText::new(
-                    "Toàn bộ dữ liệu nằm trong máy: tra từ, học và ôn đều chạy khi không có mạng.",
+                    "Everything lives on your device: lookup, study and review all work offline.",
                 )
                 .size(11.5)
                 .color(ui::MUTED),
@@ -237,27 +238,27 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         ui.add_space(8.0);
         if state.confirm_reset {
             ui::card(ui, Some(ui::BAD), |ui| {
-                ui.label(RichText::new("Xoá toàn bộ tiến độ?").strong());
+                ui.label(RichText::new("Erase all progress?").strong());
                 ui.label(
-                    RichText::new("Không thể hoàn tác.")
+                    RichText::new("This cannot be undone.")
                         .size(12.0)
                         .color(ui::MUTED),
                 );
                 ui.add_space(6.0);
                 ui.columns(2, |c| {
-                    if c[0].button("Huỷ").clicked() {
+                    if c[0].button("Cancel").clicked() {
                         state.confirm_reset = false;
                     }
-                    if c[1].button(RichText::new("Xoá").color(ui::BAD)).clicked() {
+                    if c[1].button(RichText::new("Erase").color(ui::BAD)).clicked() {
                         *ctx.progress = Progress::default();
                         ctx.progress.roll_to(ctx.day);
                         state.confirm_reset = false;
-                        ctx.say("Đã xoá tiến độ.");
+                        ctx.say("Progress erased.");
                     }
                 });
             });
         } else if ui
-            .button(RichText::new("Xoá tiến độ").size(12.0).color(ui::MUTED))
+            .button(RichText::new("Erase progress").size(12.0).color(ui::MUTED))
             .clicked()
         {
             state.confirm_reset = true;
@@ -294,7 +295,7 @@ fn test_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             );
         });
         ui.label(
-            RichText::new(format!("câu {} / ~{}", asked + 1, MAX_ITEMS))
+            RichText::new(format!("question {} / ~{}", asked + 1, MAX_ITEMS))
                 .size(11.5)
                 .color(ui::MUTED),
         );
@@ -310,8 +311,8 @@ fn test_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         ui.add_space(4.0);
         ui.label(
             RichText::new(format!(
-                "⚠ Bạn đang chọn nghĩa cho cả những từ không có thật (trên {:.0}%). \
-                 Hãy bấm “Không biết” nếu không chắc.",
+                "⚠ You are picking meanings for words that do not exist (over \
+                 {:.0}%). Press “I don't know” when you are not sure.",
                 FALSE_ALARM_LIMIT * 100.0
             ))
             .size(12.0)
@@ -341,7 +342,7 @@ fn test_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         });
         ui.add_space(4.0);
         ui.label(
-            RichText::new("Từ này nghĩa là gì?")
+            RichText::new("What does this word mean?")
                 .size(13.0)
                 .color(ui::MUTED),
         );
@@ -355,7 +356,7 @@ fn test_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         }
         ui.add_space(8.0);
         // Spec 2.2 requires this: not knowing must not have to be a guess.
-        if ui::wide_button(ui, "Không biết", ui::MUTED).clicked() {
+        if ui::wide_button(ui, "I don't know", ui::MUTED).clicked() {
             answered = Some(None);
         }
         ui.add_space(16.0);
@@ -373,7 +374,7 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(16.0);
         ui.vertical_centered(|ui| {
-            ui.label(RichText::new("Kết quả").size(20.0).strong());
+            ui.label(RichText::new("Result").size(20.0).strong());
             ui.add_space(6.0);
             ui.label(
                 RichText::new(format!("#{}", ui::thousands(verdict.frontier)))
@@ -382,7 +383,7 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
                     .color(ui::ACCENT),
             );
             ui.label(
-                RichText::new("đường chân trời từ vựng")
+                RichText::new("vocabulary frontier")
                     .size(12.5)
                     .color(ui::MUTED),
             );
@@ -394,14 +395,18 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
                 .num_columns(2)
                 .spacing([12.0, 4.0])
                 .show(ui, |ui| {
-                    ui.label(RichText::new("Số câu").size(13.0).color(ui::MUTED));
+                    ui.label(RichText::new("Questions").size(13.0).color(ui::MUTED));
                     ui.label(RichText::new(verdict.asked.to_string()).size(13.0));
                     ui.end_row();
-                    ui.label(RichText::new("Trả lời đúng").size(13.0).color(ui::MUTED));
+                    ui.label(
+                        RichText::new("Answered correctly")
+                            .size(13.0)
+                            .color(ui::MUTED),
+                    );
                     ui.label(RichText::new(format!("{:.0}%", verdict.raw_rate * 100.0)).size(13.0));
                     ui.end_row();
                     ui.label(
-                        RichText::new("Sau hiệu chỉnh đoán mò")
+                        RichText::new("After guess correction")
                             .size(13.0)
                             .color(ui::MUTED),
                     );
@@ -410,7 +415,7 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
                     );
                     ui.end_row();
                     ui.label(
-                        RichText::new("Chọn nghĩa cho từ giả")
+                        RichText::new("Claimed to know invented words")
                             .size(13.0)
                             .color(ui::MUTED),
                     );
@@ -429,7 +434,7 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
 
         // Spec 2.2's output: the estimated share known, block by block.
         ui.add_space(8.0);
-        ui::section(ui, "Ước lượng theo khối", |ui| {
+        ui::section(ui, "Estimate by block", |ui| {
             for block in 0..5u32 {
                 let start = block * 1_000;
                 let share = verdict.known_share(start);
@@ -454,14 +459,14 @@ fn result_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState, verdi
         });
 
         ui.add_space(14.0);
-        if ui::wide_button(ui, "Bắt đầu học", ui::ACCENT).clicked() {
+        if ui::wide_button(ui, "Start studying", ui::ACCENT).clicked() {
             state.result = None;
             *ctx.goto = Some(crate::app::Tab::Study);
         }
         ui.label(
             RichText::new(
-                "Những từ dưới mốc này được coi là đã biết nhưng chưa kiểm chứng — \
-                 dùng Quét nhanh để dò lỗ hổng.",
+                "Words below this mark are assumed known but unverified — use \
+                 Quick scan to find the gaps.",
             )
             .size(11.5)
             .color(ui::MUTED),

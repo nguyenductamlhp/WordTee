@@ -12,6 +12,19 @@ use crate::ui;
 /// Window title on desktop, launcher label on Android.
 pub const APP_NAME: &str = "WordTee";
 
+/// The UI font.
+///
+/// egui's bundled Ubuntu-Light covers only 89% of the characters this app puts
+/// on screen. The two gaps are exactly the two things the app is made of:
+/// Vietnamese tone marks, which live in Latin Extended Additional
+/// (U+1EA0–U+1EF9), and the IPA in every pronunciation — `ˈ ə ɪ ː` alone occur
+/// 150.000 times in the dictionary. Both rendered as empty boxes. Noto Sans
+/// covers 99,99% of the pack; see the test at the bottom of this file.
+static UI_FONT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/fonts/NotoSans-Regular.ttf"
+));
+
 /// Key the progress is stored under (eframe's storage: a file on desktop and
 /// Android, local storage in the browser).
 const STORAGE_KEY: &str = "wordtee.progress";
@@ -34,10 +47,10 @@ impl Tab {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Lookup => "🔍 Tra từ",
-            Self::Study => "🎓 Học",
-            Self::Map => "🗺 Bản đồ",
-            Self::Profile => "👤 Tôi",
+            Self::Lookup => "🔍 Look up",
+            Self::Study => "🎓 Study",
+            Self::Map => "🗺 Map",
+            Self::Profile => "👤 You",
         }
     }
 }
@@ -139,6 +152,7 @@ impl WordTeeApp {
     /// The app's look and feel. Separate from [`Self::new`] so tests can set it
     /// up without an [`eframe::CreationContext`].
     pub fn configure_style(ctx: &egui::Context) {
+        Self::install_font(ctx);
         ctx.set_theme(egui::ThemePreference::Dark);
         ctx.all_styles_mut(|style| {
             // The default sizes are tuned for a mouse pointer and read small
@@ -150,6 +164,32 @@ impl WordTeeApp {
             style.spacing.item_spacing = egui::vec2(8.0, 6.0);
             style.visuals.selection.bg_fill = ui::ACCENT.gamma_multiply(0.35);
         });
+    }
+
+    /// Puts [`UI_FONT`] in front of the bundled fonts.
+    ///
+    /// It goes first rather than last so that a Vietnamese word is drawn in one
+    /// typeface throughout — as a fallback it would only supply the accented
+    /// letters, and every word would be a mix of two fonts. The emoji fonts
+    /// stay behind it and still serve the tab bar icons. Monospace keeps Hack
+    /// in front and takes this only as a fallback, so columns still line up.
+    fn install_font(ctx: &egui::Context) {
+        use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
+
+        ctx.add_font(FontInsert::new(
+            "NotoSans",
+            egui::FontData::from_static(UI_FONT),
+            vec![
+                InsertFontFamily {
+                    family: egui::FontFamily::Proportional,
+                    priority: FontPriority::Highest,
+                },
+                InsertFontFamily {
+                    family: egui::FontFamily::Monospace,
+                    priority: FontPriority::Lowest,
+                },
+            ],
+        ));
     }
 
     pub fn progress(&self) -> &Progress {
@@ -192,7 +232,7 @@ impl WordTeeApp {
                     }
                     let (due, new, _) = self.study.pending(&self.dict, &self.progress, self.day);
                     if due + new > 0 {
-                        ui::chip(ui, &format!("{} thẻ", due + new), ui::WARN);
+                        ui::chip(ui, &format!("{} due", due + new), ui::WARN);
                     }
                 });
             });
@@ -275,7 +315,7 @@ impl WordTeeApp {
                     }
                     if undoable {
                         let left = (UNDO_SECONDS - age).ceil() as u32;
-                        if ui.button(format!("Hoàn tác ({left}s)")).clicked() {
+                        if ui.button(format!("Undo ({left}s)")).clicked() {
                             undo = true;
                         }
                     }
@@ -375,6 +415,71 @@ mod tests {
         fn item(&self, rank: u32) -> SenseId {
             self.app.dict.at_rank(rank).expect("rank in range").id
         }
+    }
+
+    /// Every character the dictionary is able to draw, and how often it occurs.
+    fn characters_in_the_pack(dict: &Dict) -> std::collections::HashMap<char, u64> {
+        let mut seen = std::collections::HashMap::new();
+        let mut count = |text: &str| {
+            for c in text.chars() {
+                *seen.entry(c).or_insert(0u64) += 1;
+            }
+        };
+        for id in 0..dict.word_count() {
+            let word = dict.word(id);
+            count(word.text);
+            count(word.ipa);
+            for (_, related) in dict.relations(id) {
+                count(related);
+            }
+        }
+        for id in 0..dict.sense_count() {
+            let sense = dict.sense(id);
+            count(sense.def);
+            count(sense.example);
+        }
+        seen
+    }
+
+    #[test]
+    fn the_bundled_font_covers_the_dictionary() {
+        // The bug this test exists for: egui's default font has neither the
+        // Vietnamese tone marks nor the IPA, and every one of them rendered as
+        // an empty box.
+        let face = ttf_parser::Face::parse(UI_FONT, 0).expect("the bundled font parses");
+        let dict = Dict::load();
+        let seen = characters_in_the_pack(&dict);
+
+        let covered = |c: char| c.is_whitespace() || face.glyph_index(c).is_some();
+        let total: u64 = seen.values().sum();
+        let missing: u64 = seen
+            .iter()
+            .filter(|(c, _)| !covered(**c))
+            .map(|(_, n)| n)
+            .sum();
+
+        // Vietnamese lives in Latin Extended Additional; the IPA in the two
+        // blocks after Latin Extended-B. Neither may have a single gap.
+        for (&c, &n) in &seen {
+            let must_have = matches!(c as u32,
+                0x00C0..=0x024F   // Latin supplements, including ơ ư đ
+                | 0x0250..=0x02AF // IPA extensions: ə ɪ ʊ ŋ
+                | 0x02B0..=0x02FF // modifiers: the ˈ ˌ ː of a transcription
+                | 0x1E00..=0x1EFF // Latin Extended Additional: ế ừ ụ ợ
+            );
+            assert!(
+                !must_have || covered(c),
+                "no glyph for {c:?} (U+{:04X}), which the pack uses {n} times",
+                c as u32
+            );
+        }
+        // The rest is a long tail of foreign scripts in a few etymologies —
+        // Khmer, Arabic, Devanagari — which are out of scope for this app.
+        let coverage = 100.0 * (total - missing) as f64 / total as f64;
+        assert!(
+            coverage > 99.99,
+            "font covers only {coverage:.4}% of the pack"
+        );
     }
 
     #[test]

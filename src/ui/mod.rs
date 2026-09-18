@@ -73,13 +73,16 @@ pub fn band_chip(ui: &mut egui::Ui, band: Band, rank: u32) {
     chip(ui, &text, color);
 }
 
-/// 25000 -> "25.000", the Vietnamese thousands separator the spec uses.
+/// 25000 -> "25,000".
+///
+/// The spec writes its numbers the Vietnamese way (25.000); the interface is
+/// in English, so the group separator follows it.
 pub fn thousands(n: u32) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, c) in digits.chars().enumerate() {
         if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            out.push('.');
+            out.push(',');
         }
         out.push(c);
     }
@@ -225,10 +228,14 @@ pub fn speak_buttons(ui: &mut egui::Ui, text: &str) {
     if !can_speak() {
         return;
     }
-    if ui.button("🔊").on_hover_text("Nghe (1,0×)").clicked() {
+    if ui.button("🔊").on_hover_text("Play (1.0×)").clicked() {
         speak(text, 1.0);
     }
-    if ui.button("🐢").on_hover_text("Nghe chậm (0,75×)").clicked() {
+    if ui
+        .button("🐢")
+        .on_hover_text("Play slowly (0.75×)")
+        .clicked()
+    {
         speak(text, 0.75);
     }
 }
@@ -238,12 +245,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn thousands_uses_dots() {
+    fn thousands_are_grouped() {
         assert_eq!(thousands(1), "1");
         assert_eq!(thousands(999), "999");
-        assert_eq!(thousands(1_000), "1.000");
-        assert_eq!(thousands(25_000), "25.000");
-        assert_eq!(thousands(119_296), "119.296");
+        assert_eq!(thousands(1_000), "1,000");
+        assert_eq!(thousands(25_000), "25,000");
+        assert_eq!(thousands(119_296), "119,296");
     }
 
     #[test]

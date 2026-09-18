@@ -1,4 +1,4 @@
-//! Học — the daily session (spec 3.6) and Quick Scan (spec 2.2).
+//! Study — the daily session (spec 3.6) and Quick Scan (spec 2.2).
 //!
 //! The session order is the spec's: overdue reviews hardest-first, then new
 //! items from Smart Feeding, then at most two spot-checks on things marked
@@ -134,9 +134,9 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
             );
             ui.label(
                 RichText::new(if ctx.progress.streak == 0 {
-                    "Học hôm nay để bắt đầu chuỗi ngày".to_owned()
+                    "Study today to start a streak".to_owned()
                 } else {
-                    format!("ngày liên tiếp · kỷ lục {}", ctx.progress.best_streak)
+                    format!("day streak · best {}", ctx.progress.best_streak)
                 })
                 .size(12.5)
                 .color(ui::MUTED),
@@ -146,17 +146,18 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
 
         if !ctx.progress.placement_done {
             ui::card(ui, Some(ui::ACCENT), |ui| {
-                ui.label(RichText::new("Chưa biết bạn đang ở đâu").strong());
+                ui.label(RichText::new("We don't know your level yet").strong());
                 ui.label(
                     RichText::new(
-                        "Làm bài test đầu vào (khoảng 15–25 câu) để hệ thống tìm \
-                         “đường chân trời từ vựng” và bắt đầu đẩy từ đúng mức.",
+                        "Take the placement test (15–25 questions) so the app can \
+                         find your vocabulary frontier and start feeding words at \
+                         the right level.",
                     )
                     .size(13.0)
                     .color(ui::MUTED),
                 );
                 ui.add_space(6.0);
-                if ui::wide_button(ui, "Làm bài test đầu vào", ui::ACCENT).clicked() {
+                if ui::wide_button(ui, "Take the placement test", ui::ACCENT).clicked() {
                     *ctx.goto = Some(crate::app::Tab::Profile);
                 }
             });
@@ -164,19 +165,19 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
         }
 
         ui::card(ui, None, |ui| {
-            ui.label(RichText::new("Phiên hôm nay").size(17.0).strong());
+            ui.label(RichText::new("Today's session").size(17.0).strong());
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                ui::chip(ui, &format!("{due} thẻ ôn"), ui::C_LEARNING);
-                ui::chip(ui, &format!("{new} từ mới"), ui::ACCENT);
+                ui::chip(ui, &format!("{due} to review"), ui::C_LEARNING);
+                ui::chip(ui, &format!("{new} new"), ui::ACCENT);
                 if checks > 0 {
-                    ui::chip(ui, &format!("{checks} kiểm tra lại"), ui::MUTED);
+                    ui::chip(ui, &format!("{checks} spot-checks"), ui::MUTED);
                 }
             });
             ui.add_space(4.0);
             ui.label(
                 RichText::new(format!(
-                    "Mục tiêu {} từ mới/ngày · đã học {} · đã ôn {}",
+                    "Goal {} new/day · {} learned · {} reviewed",
                     ctx.progress.daily_goal, ctx.progress.new_today, ctx.progress.reviews_today
                 ))
                 .size(12.0)
@@ -188,8 +189,9 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new(format!(
-                        "⚠ Thẻ ôn đang dồn quá {BACKLOG_FACTOR} lần mục tiêu ngày. \
-                         Tạm ngừng nạp từ mới — hãy trả nợ thẻ ôn trong vài ngày tới."
+                        "⚠ Reviews have piled up past {BACKLOG_FACTOR}× the daily goal. \
+                         New words are paused — work the backlog down over the next \
+                         few days."
                     ))
                     .size(12.5)
                     .color(ui::WARN),
@@ -198,7 +200,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
             ui.add_space(8.0);
             let enabled = due + new + checks > 0;
             ui.add_enabled_ui(enabled, |ui| {
-                if ui::wide_button(ui, "Bắt đầu học", ui::ACCENT).clicked() {
+                if ui::wide_button(ui, "Start studying", ui::ACCENT).clicked() {
                     state.session = Some(Session::build(ctx.dict, ctx.progress, ctx.day));
                     state.mode = Mode::Session;
                     state.active = None;
@@ -209,7 +211,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
             });
             if !enabled {
                 ui.label(
-                    RichText::new("Xong hết rồi. Quay lại vào ngày mai, hoặc quét nhanh bên dưới.")
+                    RichText::new("All done. Come back tomorrow, or run a quick scan below.")
                         .size(12.5)
                         .color(ui::MUTED),
                 );
@@ -221,18 +223,19 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
         let scanned = ctx.progress.scanned_today;
         let scan_left = QUICK_SCAN_DAILY.saturating_sub(scanned);
         ui::card(ui, None, |ui| {
-            ui.label(RichText::new("Quét nhanh").size(16.0).strong());
+            ui.label(RichText::new("Quick scan").size(16.0).strong());
             ui.label(
                 RichText::new(
-                    "Những từ hệ thống đoán là bạn đã biết. Xác nhận nhanh để \
-                     tìm ra các lỗ hổng từ đời thường.",
+                    "Words the app assumed you already know. Confirm them quickly \
+                     to find the everyday gaps a placement test misses.",
                 )
                 .size(12.5)
                 .color(ui::MUTED),
             );
             ui.add_space(6.0);
             ui.add_enabled_ui(scan_left > 0 && ctx.progress.frontier > 1, |ui| {
-                if ui::wide_button(ui, &format!("Quét nhanh ({scan_left} thẻ)"), ui::WARN).clicked()
+                if ui::wide_button(ui, &format!("Quick scan ({scan_left} cards)"), ui::WARN)
+                    .clicked()
                 {
                     state.scan =
                         study::quick_scan(ctx.dict, ctx.progress, ctx.rng, scan_left as usize);
@@ -241,7 +244,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
             });
             if ctx.progress.frontier <= 1 {
                 ui.label(
-                    RichText::new("Cần làm bài test đầu vào trước.")
+                    RichText::new("Take the placement test first.")
                         .size(12.0)
                         .color(ui::MUTED),
                 );
@@ -319,7 +322,7 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(6.0);
         if let Task::Verify(_) = task {
-            ui::chip(ui, "Kiểm tra lại từ bạn đánh dấu đã biết", ui::MUTED);
+            ui::chip(ui, "Checking a word you marked as known", ui::MUTED);
             ui.add_space(4.0);
         }
 
@@ -356,7 +359,7 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                     if c[0]
                         .add_sized(
                             [c[0].available_width(), 42.0],
-                            egui::Button::new("Đã biết rồi"),
+                            egui::Button::new("Already know it"),
                         )
                         .clicked()
                     {
@@ -365,7 +368,7 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                         answer = Some(true);
                     }
                     let learn =
-                        egui::Button::new(RichText::new("Học từ này").color(ui::ACCENT).strong());
+                        egui::Button::new(RichText::new("Learn this").color(ui::ACCENT).strong());
                     if c[1]
                         .add_sized([c[1].available_width(), 42.0], learn)
                         .clicked()
@@ -381,7 +384,7 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                     ui,
                     ctx,
                     active,
-                    &format!("“{}” nghĩa là gì?", word.text),
+                    &format!("What does “{}” mean?", word.text),
                     Some(choice.clone()),
                     None,
                 );
@@ -391,14 +394,21 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                     ui,
                     ctx,
                     active,
-                    "Từ nào mang nghĩa này?",
+                    "Which word means this?",
                     Some(choice.clone()),
                     None,
                 );
             }
             Exercise::Fill(gap) => {
                 let gap = gap.clone();
-                answer = question(ui, ctx, active, "Điền từ còn thiếu:", None, Some(*gap));
+                answer = question(
+                    ui,
+                    ctx,
+                    active,
+                    "Fill in the missing word:",
+                    None,
+                    Some(*gap),
+                );
             }
             Exercise::Spell => {
                 answer = spell_question(ui, ctx, active, &sense);
@@ -437,10 +447,10 @@ fn question(
         ui.add_sized(
             [ui.available_width(), 38.0],
             egui::TextEdit::singleline(&mut active.typed)
-                .hint_text(format!("bắt đầu bằng “{}”", gap.hint)),
+                .hint_text(format!("starts with “{}”", gap.hint)),
         );
         ui.add_space(6.0);
-        if ui::wide_button(ui, "Trả lời", ui::ACCENT).clicked() {
+        if ui::wide_button(ui, "Answer", ui::ACCENT).clicked() {
             active.hesitated |= ctx.now - active.started > SLOW_SECONDS;
             return Some(gap.accepts(&active.typed));
         }
@@ -471,7 +481,7 @@ fn question(
     }
     let picked = active.picked?;
     ui.add_space(6.0);
-    if ui::wide_button(ui, "Tiếp tục", ui::ACCENT).clicked() {
+    if ui::wide_button(ui, "Continue", ui::ACCENT).clicked() {
         return Some(picked == choice.answer);
     }
     None
@@ -486,7 +496,7 @@ fn spell_question(
 ) -> Option<bool> {
     ui::card(ui, None, |ui| {
         ui.label(
-            RichText::new("Viết từ mang nghĩa này:")
+            RichText::new("Write the word for this meaning:")
                 .size(13.0)
                 .color(ui::MUTED),
         );
@@ -497,18 +507,18 @@ fn spell_question(
     ui.add_space(8.0);
     ui.add_sized(
         [ui.available_width(), 38.0],
-        egui::TextEdit::singleline(&mut active.typed).hint_text("gõ từ tiếng Anh…"),
+        egui::TextEdit::singleline(&mut active.typed).hint_text("type the English word…"),
     );
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        if ui.small_button("Gợi ý chữ đầu").clicked() {
+        if ui.small_button("Hint: first letter").clicked() {
             active.hesitated = true;
         }
         if active.hesitated {
             let word = ctx.dict.word(sense.word).text;
             ui.label(
                 RichText::new(format!(
-                    "bắt đầu bằng “{}”",
+                    "starts with “{}”",
                     word.chars().next().unwrap_or('?')
                 ))
                 .size(12.5)
@@ -517,7 +527,7 @@ fn spell_question(
         }
     });
     ui.add_space(6.0);
-    if ui::wide_button(ui, "Trả lời", ui::ACCENT).clicked() {
+    if ui::wide_button(ui, "Answer", ui::ACCENT).clicked() {
         active.hesitated |= ctx.now - active.started > SLOW_SECONDS;
         return Some(study::spelling_accepts(ctx.dict, sense, &active.typed));
     }
@@ -555,7 +565,9 @@ fn grade_and_advance(ctx: &mut Ctx, state: &mut StudyState, correct: bool) {
                 return;
             }
             if leech {
-                ctx.say("Từ này đang khó nhớ — tạm hoãn 3 ngày rồi xem lại thẻ đầy đủ.");
+                ctx.say(
+                    "This one keeps slipping — set aside for 3 days, then review the full card.",
+                );
             }
         }
     }
@@ -584,7 +596,7 @@ fn summary(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                 .advance_frontier(explored as f32 / total as f32);
             if ctx.progress.frontier != before {
                 ctx.say(format!(
-                    "Đã mở dải từ mới: bắt đầu từ #{}.",
+                    "New band unlocked: starting at #{}.",
                     ui::thousands(ctx.progress.frontier)
                 ));
             }
@@ -593,17 +605,17 @@ fn summary(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
     ui.add_space(24.0);
     ui.vertical_centered(|ui| {
         ui.label(RichText::new("✅").size(44.0));
-        ui.label(RichText::new("Xong phiên hôm nay").size(20.0).strong());
+        ui.label(RichText::new("Session complete").size(20.0).strong());
         ui.add_space(6.0);
         let rate = (state.right * 100).checked_div(state.answered).unwrap_or(0);
         ui.label(
-            RichText::new(format!("{} câu · đúng {rate}%", state.answered))
+            RichText::new(format!("{} questions · {rate}% correct", state.answered))
                 .size(13.0)
                 .color(ui::MUTED),
         );
-        ui.label(RichText::new(format!("🔥 chuỗi {} ngày", ctx.progress.streak)).size(14.0));
+        ui.label(RichText::new(format!("🔥 {} day streak", ctx.progress.streak)).size(14.0));
         ui.add_space(14.0);
-        if ui.button("Về trang Học").clicked() {
+        if ui.button("Back to Study").clicked() {
             state.mode = Mode::Idle;
             state.session = None;
             state.active = None;
@@ -623,10 +635,10 @@ fn scan_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
                 state.mode = Mode::Idle;
                 state.scan.clear();
             }
-            ui.label(RichText::new("Quét nhanh").strong());
+            ui.label(RichText::new("Quick scan").strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
-                    RichText::new(format!("còn {}", state.scan.len()))
+                    RichText::new(format!("{} left", state.scan.len()))
                         .size(12.5)
                         .color(ui::MUTED),
                 );
@@ -638,9 +650,9 @@ fn scan_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
     let Some(&sense) = state.scan.first() else {
         ui.add_space(30.0);
         ui.vertical_centered(|ui| {
-            ui.label(RichText::new("Đã quét xong.").size(17.0).strong());
+            ui.label(RichText::new("Scan complete.").size(17.0).strong());
             ui.add_space(8.0);
-            if ui.button("Về trang Học").clicked() {
+            if ui.button("Back to Study").clicked() {
                 state.mode = Mode::Idle;
             }
         });
@@ -650,7 +662,7 @@ fn scan_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
 
     ui.add_space(10.0);
     ui.label(
-        RichText::new("Bạn có biết từ này không?")
+        RichText::new("Do you know this word?")
             .size(14.0)
             .color(ui::MUTED),
     );
