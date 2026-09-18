@@ -22,13 +22,13 @@ Map, Look up, You — drawn rather than typed, for the reason below.
 │      n. · Advanced #5,105      │
 │ ────────────────────────────── │
 │    What does it mean?          │
-│   [ Sự bơi. ]                  │
-│   [ Tờ (giấy). ]               │
-│   [ Trổ lá, ra lá. ]           │
-│   [ Dở (sách). ]               │
-├────────────────────────────────┤
-│  Mastery  38% → 46%            │
-│  ████████░░░░░░░░░░            │
+│                                │
+│ [ Tờ (giấy).        ] ← red    │
+│ [ Sự bơi.           ] ← green  │
+│ [ Trổ lá, ra lá.    ]          │
+│ [ Dở (sách).        ]          │
+│                                │
+│ [      Next word      ]        │
 ├────────────────────────────────┤
 │ home   cap   grid  lens  bust  │
 │ Home  Study  Map Look up  You  │
@@ -40,10 +40,16 @@ Map, Look up, You — drawn rather than typed, for the reason below.
 **Home.** Where the app opens: one English word, four Vietnamese meanings, pick
 one. There is nothing to start and nothing to finish, which is the point — it
 is the lowest-friction way in. Answering moves the same FSRS card a study
-session would, so a right answer lengthens the interval and fills the mastery
-bar while a wrong one is a lapse that shortens it and drops the bar back. The
-meter is not a separate score: it reads the card's own stability against spec
-3.4's 60-day mastery threshold, so the bar and the schedule can never disagree.
+session would: a right answer lengthens the review interval and raises the
+word's mastery, a wrong one is a lapse that shortens it and drops mastery back.
+Mastery is not a separate score — it reads the card's own stability against
+spec 3.4's 60-day threshold, so it can never disagree with the schedule.
+
+The verdict is carried by the answer card's own background rather than by the
+colour of its text: a line of Vietnamese is being read, not watched for a change
+of hue. A wrong answer marks two cards — the chosen one red *and* the right one
+green — because marking only the mistake says what not to think without ever
+saying what to.
 
 What it asks about is not random either. Anything already due comes first, so
 the quick game doubles as review; only when nothing is waiting does it reach

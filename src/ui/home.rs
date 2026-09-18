@@ -25,6 +25,29 @@ use crate::ui;
 const SLOW_SECONDS: f64 = 12.0;
 const OPTIONS: usize = 4;
 
+/// How one option is tinted once the question has been answered.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Mark {
+    /// Untouched — before the answer, and for the options not involved.
+    None,
+    Right,
+    Wrong,
+}
+
+/// Decides an option's tint.
+///
+/// A wrong answer marks two cards, not one: the chosen card in red *and* the
+/// right card in green. Marking only the mistake says what not to think
+/// without ever saying what to.
+fn mark_for(picked: Option<usize>, index: usize, answer: usize) -> Mark {
+    match picked {
+        None => Mark::None,
+        Some(_) if index == answer => Mark::Right,
+        Some(chosen) if chosen == index => Mark::Wrong,
+        Some(_) => Mark::None,
+    }
+}
+
 /// The question on screen.
 struct Question {
     sense: SenseId,
@@ -32,9 +55,6 @@ struct Question {
     /// `Context::input(|i| i.time)` when it appeared.
     started: f64,
     picked: Option<usize>,
-    /// Mastery before the answer, so the bar can show what moved.
-    was: f32,
-    now: f32,
 }
 
 #[derive(Default)]
@@ -68,7 +88,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
     }
     // Copied out before the borrow below, which the widget closures rule out
     // holding alongside `state` itself.
-    let (right, asked, run) = (state.right, state.asked, state.run);
+    let run = state.run;
     let mut finished: Option<(WordId, bool)> = None;
 
     let Some(question) = &mut state.question else {
@@ -79,8 +99,8 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(6.0);
-        score_line(ui, right, asked, run);
-        ui.add_space(8.0);
+        score_line(ui, run);
+        ui.add_space(4.0);
 
         // --- the word ---
         ui::card(ui, Some(ui::accent(ui)), |ui| {
@@ -112,16 +132,12 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
         let answered = question.picked.is_some();
         let mut chose = None;
         for (i, option) in question.choice.options.iter().enumerate() {
-            let correct = i == question.choice.answer;
-            let color = match question.picked {
-                // Once answered, the right one is always shown, so a wrong
-                // guess still teaches the word rather than only marking it.
-                Some(_) if correct => ui::good(ui),
-                Some(p) if p == i => ui::bad(ui),
-                Some(_) => ui::muted(ui),
-                None => ui.visuals().text_color(),
+            let tint = match mark_for(question.picked, i, question.choice.answer) {
+                Mark::Right => Some(ui::good(ui)),
+                Mark::Wrong => Some(ui::bad(ui)),
+                Mark::None => None,
             };
-            if ui::wide_button(ui, option, color).clicked() && !answered {
+            if ui::choice_button(ui, option, tint).clicked() && !answered {
                 chose = Some(i);
             }
             ui.add_space(4.0);
@@ -130,11 +146,9 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
             grade(ctx, question, i, ctx.now);
         }
 
-        // --- what the answer did ---
+        // --- move on ---
         if question.picked.is_some() {
-            ui.add_space(8.0);
-            mastery_bar(ui, question.was, question.now);
-            ui.add_space(10.0);
+            ui.add_space(12.0);
             let accent = ui::accent(ui);
             let next = ui::wide_button(ui, "Next word", accent);
             if next.clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -156,7 +170,6 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
 /// Applies the answer to the card, through the same path a session uses.
 fn grade(ctx: &mut Ctx, question: &mut Question, picked: usize, now: f64) {
     let sense = ctx.dict.sense(question.sense);
-    question.was = ctx.progress.mastery(&sense);
     question.picked = Some(picked);
 
     let correct = picked == question.choice.answer;
@@ -173,23 +186,15 @@ fn grade(ctx: &mut Ctx, question: &mut Question, picked: usize, now: f64) {
         level: 1,
     };
     ctx.progress.answer(sense.id, outcome, ctx.day);
-    question.now = ctx.progress.mastery(&sense);
     ctx.progress.mark_active(ctx.day);
     // Practising here counts as answering the reminder (spec 3.6).
     ctx.progress.mark_reminded(crate::progress::now_secs());
 }
 
-/// Score so far, kept small: this is a warm-up, not a test.
-fn score_line(ui: &mut egui::Ui, right: u32, asked: u32, run: u32) {
+/// A run of right answers, and nothing else. This is a warm-up, not a test,
+/// and a running score turns it into one.
+fn score_line(ui: &mut egui::Ui, run: u32) {
     ui.horizontal(|ui| {
-        let color = ui::muted(ui);
-        if asked > 0 {
-            ui.label(
-                RichText::new(format!("{right}/{asked} correct"))
-                    .size(12.5)
-                    .color(color),
-            );
-        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if run >= 3 {
                 let good = ui::good(ui);
@@ -197,30 +202,6 @@ fn score_line(ui: &mut egui::Ui, right: u32, asked: u32, run: u32) {
             }
         });
     });
-}
-
-/// The mastery meter, showing where the answer moved it.
-fn mastery_bar(ui: &mut egui::Ui, was: f32, now: f32) {
-    let rose = now >= was;
-    let color = if rose { ui::good(ui) } else { ui::bad(ui) };
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Mastery").size(12.0).color(ui::muted(ui)));
-        ui.label(
-            RichText::new(format!(
-                "{:.0}% {} {:.0}%",
-                was * 100.0,
-                if rose { "→" } else { "↓" },
-                now * 100.0
-            ))
-            .size(12.0)
-            .color(color),
-        );
-    });
-    ui.add(
-        egui::ProgressBar::new(now.clamp(0.0, 1.0))
-            .desired_height(10.0)
-            .fill(color),
-    );
 }
 
 /// Picks the next item: due first, then learning, then something new.
@@ -233,14 +214,11 @@ fn build(ctx: &mut Ctx, skip: Option<WordId>) -> Option<Question> {
         }
         tried.push(sense.word);
         if let Some(choice) = quiz::meaning_choice(ctx.dict, ctx.rng, &sense, OPTIONS) {
-            let mastery = ctx.progress.mastery(&sense);
             return Some(Question {
                 sense: candidate,
                 choice,
                 started: ctx.now,
                 picked: None,
-                was: mastery,
-                now: mastery,
             });
         }
     }
@@ -343,6 +321,33 @@ mod tests {
     }
 
     #[test]
+    fn nothing_is_marked_before_an_answer() {
+        for i in 0..OPTIONS {
+            assert_eq!(mark_for(None, i, 2), Mark::None);
+        }
+    }
+
+    #[test]
+    fn a_right_answer_marks_only_that_card() {
+        let answer = 2;
+        for i in 0..OPTIONS {
+            let expected = if i == answer { Mark::Right } else { Mark::None };
+            assert_eq!(mark_for(Some(answer), i, answer), expected, "option {i}");
+        }
+    }
+
+    #[test]
+    fn a_wrong_answer_marks_the_mistake_and_the_right_card() {
+        let (answer, chosen) = (2, 0);
+        assert_eq!(mark_for(Some(chosen), chosen, answer), Mark::Wrong);
+        assert_eq!(mark_for(Some(chosen), answer, answer), Mark::Right);
+        // The two untouched options stay plain.
+        for i in [1, 3] {
+            assert_eq!(mark_for(Some(chosen), i, answer), Mark::None, "option {i}");
+        }
+    }
+
+    #[test]
     fn a_question_is_always_available_even_from_a_cold_start() {
         // A brand-new user has no frontier and no cards, and still has to get
         // a question on the very first frame.
@@ -409,22 +414,14 @@ mod tests {
             } else {
                 (answer + 1) % OPTIONS
             };
+            let before = ctx.progress.mastery(&target);
             grade(&mut ctx, &mut question, picked, 0.0);
+            let after = ctx.progress.mastery(&target);
 
             if correct {
-                assert!(
-                    question.now >= question.was,
-                    "{} -> {}",
-                    question.was,
-                    question.now
-                );
+                assert!(after >= before, "right answer: {before} -> {after}");
             } else {
-                assert!(
-                    question.now < question.was,
-                    "{} -> {}",
-                    question.was,
-                    question.now
-                );
+                assert!(after < before, "wrong answer: {before} -> {after}");
             }
         }
     }

@@ -203,6 +203,23 @@ pub fn card_clicked<R>(ui: &mut egui::Ui, card: &egui::InnerResponse<R>) -> bool
         .clicked()
 }
 
+/// A full-width answer option.
+///
+/// `mark` tints the whole card rather than the text. A verdict has to read at a
+/// glance, and a colour change inside a line of Vietnamese is easy to miss —
+/// the eye is busy reading the words, not watching their hue.
+pub fn choice_button(ui: &mut egui::Ui, text: &str, mark: Option<Color32>) -> egui::Response {
+    let mut button = egui::Button::new(RichText::new(text).size(14.5));
+    if let Some(color) = mark {
+        // Tinted towards the panel, so the fill lands pale on the light theme
+        // and deep on the dark one, and the label stays readable on both.
+        button = button
+            .fill(toward_background(ui, color, 0.32))
+            .stroke(egui::Stroke::new(1.5, toward_background(ui, color, 0.85)));
+    }
+    ui.add_sized([ui.available_width(), 44.0], button)
+}
+
 /// A full-width button, big enough for a thumb.
 pub fn wide_button(ui: &mut egui::Ui, text: &str, color: Color32) -> egui::Response {
     ui.add_sized(
