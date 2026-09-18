@@ -350,24 +350,38 @@ pub fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: 
     }
 }
 
-/// One icon-only tab, filling its column.
+/// One tab — icon over caption — filling its column.
 pub fn tab_button(ui: &mut egui::Ui, icon: Icon, selected: bool, label: &str) -> egui::Response {
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 40.0), egui::Sense::click());
+    const ICON: f32 = 22.0;
+    const CAPTION: f32 = 11.0;
+
+    let height = ICON + CAPTION + 13.0;
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), height),
+        egui::Sense::click(),
+    );
     let color = if selected { accent(ui) } else { muted(ui) };
     if selected {
         let fill = toward_background(ui, color, 0.20);
         ui.painter().rect_filled(rect, 9.0, fill);
     }
-    let side = 24.0;
-    paint_icon(
-        ui.painter(),
-        egui::Rect::from_center_size(rect.center(), egui::vec2(side, side)),
-        icon,
+
+    let icon_box = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, rect.top() + 5.0 + ICON / 2.0),
+        egui::vec2(ICON, ICON),
+    );
+    paint_icon(ui.painter(), icon_box, icon, color);
+
+    // Painted rather than laid out as a widget, so the caption cannot wrap the
+    // way the old text-only bar did — it is one line, centred, always.
+    ui.painter().text(
+        egui::pos2(rect.center().x, rect.bottom() - 5.0),
+        egui::Align2::CENTER_BOTTOM,
+        label,
+        egui::FontId::proportional(CAPTION),
         color,
     );
-    // The bar carries no text, so the name lives in the tooltip.
-    response.on_hover_text(label)
+    response
 }
 
 // -------------------------------------------------------------------------

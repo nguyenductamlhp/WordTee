@@ -10,8 +10,8 @@ server, no account and no network call at any point. The same Rust code runs as
 a native desktop binary, as an Android APK, and as WebAssembly in a browser.
 
 The interface is in English; the meanings are Vietnamese, which is what the
-dictionary holds. The bottom bar is four icons — Study, Map, Look up, You —
-drawn rather than typed, for the reason in the next section.
+dictionary holds. The bottom bar is four icons over captions — Study, Map,
+Look up, You — drawn rather than typed, for the reason in the next section.
 
 ```
 ┌────────────────────────────────┐
@@ -29,7 +29,8 @@ drawn rather than typed, for the reason in the next section.
 ├────────────────────────────────┤
 │ [I know] [Quick test] [Learn]  │
 ├────────────────────────────────┤
-│ (cap)  (grid)  (lens)  (bust)  │
+│  cap    grid    lens    bust   │
+│ Study   Map   Look up   You    │
 └────────────────────────────────┘
 ```
 
@@ -86,7 +87,8 @@ a mortarboard, a grid of blocks that mirrors the knowledge map, a magnifier and
 a bust. Every character the bar tried before this came from a fallback font in a
 different typeface, and the map glyph existed in only the crudest of them.
 Shapes take about as many lines, always match the text colour beside them, and
-cannot go missing.
+cannot go missing. The caption under each is painted too, so it is one centred
+line at any width — the labels used to wrap and buckle the bar.
 
 **Themes.** Light by default, dark on request, switchable under **You →
 Settings** and saved with the rest of your progress. Colours are chosen per
