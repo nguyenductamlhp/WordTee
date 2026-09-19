@@ -80,11 +80,20 @@ diacritics searches the definitions instead (`quyết định` → decide, decis
 Worst case measured at 30 ms against the spec's 50 ms budget, and a keystroke
 while typing costs 6 ms — `cargo run --release --example bench` prints the lot.
 
-**The word page (spec 1.3, 1.4).** One card per sense, each with its own state,
-because spec 1.2 treats a *sense* as the unit of learning, not a word. Three
-buttons act on the sense you are looking at: **I know this**, **Quick test**
-and **Learn this**, each with a five-second Undo. Quick Test asks two questions,
-and the gap-fill never re-uses a sentence already on screen.
+**The word page (spec 1.3, 1.4).** Built as a card: space reserved for an
+illustration, then the headword, its phonetics, the Vietnamese meaning in the
+accent colour and an example under it. Two large actions close it — **Should
+Learn** and **Already Knew** — with Quick Test kept as a lighter third, because
+spec 1.4 asks for three but only two of them are the decision the reader came
+to make. Every sense carries its own state, since spec 1.2 makes a *sense* the
+unit of learning rather than a word, and "Learn more…" unfolds the word family
+and the phrases built on it.
+
+Nothing fills the illustration slot: images are V2 in the spec's own roadmap
+and no free source carries one per headword. The block is drawn at the size the
+real thing would take, so adding art later is a swap and not a re-layout — a
+neutral frame reads as "nothing here yet" where a stock photo would read as a
+wrong answer.
 
 **Placement (spec 2.2).** An adaptive test over a Rasch/IRT
 model rather than a binary search, because a binary search cannot recover from

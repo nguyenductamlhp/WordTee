@@ -45,6 +45,10 @@ pub struct LookupState {
     /// to where you were.
     back: Vec<WordId>,
     test: Option<QuickTest>,
+    /// Whether the "Cách dùng" block is unfolded. Collapsed by default, as in
+    /// the reference: the card answers "what does this mean", and word family
+    /// and collocations are a second question.
+    show_usage: bool,
 }
 
 impl LookupState {
@@ -78,6 +82,7 @@ impl LookupState {
         self.open = Some(word);
         self.focus = 0;
         self.test = None;
+        self.show_usage = false;
     }
 
     fn close(&mut self) {
@@ -281,40 +286,82 @@ fn word_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Word
         return;
     }
 
-    // --- header, fixed (spec 1.3) ---
+    // --- a slim bar, so the card below carries the word (spec 1.3) ---
     egui::Panel::top("word-header").show(ui, |ui| {
-        ui.add_space(4.0);
+        ui.add_space(3.0);
         ui.horizontal(|ui| {
-            if ui.button("‹").clicked() {
+            if ui.button("\u{2039}").clicked() {
                 state.close();
-            }
-            ui.label(RichText::new(word.text).size(26.0).strong());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui::speak_buttons(ui, word.text);
-            });
-        });
-        ui.horizontal_wrapped(|ui| {
-            if !word.ipa.is_empty() {
-                ui.label(RichText::new(word.ipa).size(15.0).color(ui::accent(ui)));
             }
             if let Some(sense) = meanings.get(state.focus) {
                 ui::band_chip(ui, sense.band(), sense.rank);
             }
             if word.kind == Kind::Phrase {
-                ui::chip(ui, "phrase", ui::accent(ui));
+                let accent = ui::accent(ui);
+                ui::chip(ui, "phrase", accent);
             }
             if word.offensive {
-                ui::chip(ui, "coarse — lookup only", ui::bad(ui));
+                let bad = ui::bad(ui);
+                ui::chip(ui, "coarse \u{2014} lookup only", bad);
             }
         });
+        ui.add_space(3.0);
+    });
+
+    // --- the two actions, fixed to the bottom (spec 1.4) ---
+    let focused = meanings.get(state.focus).copied();
+    if let Some(sense) = focused {
+        action_bar(ui, ctx, state, &sense);
+    }
+
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        // --- the hero card: picture, word, sound, phonetics ---
+        ui::card(ui, None, |ui| {
+            ui::illustration_slot(ui);
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(word.text).size(30.0).strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui::speak_buttons(ui, word.text);
+                });
+            });
+            if !word.ipa.is_empty() {
+                let muted = ui::muted(ui);
+                ui.label(RichText::new(word.ipa).size(15.0).color(muted));
+            }
+            // The focused sense's meaning leads, the way the reference puts the
+            // gloss straight under the headword.
+            if let Some(sense) = meanings.get(state.focus) {
+                ui.add_space(6.0);
+                let accent = ui::accent(ui);
+                ui.label(RichText::new(sense.def).size(18.0).strong().color(accent));
+                if !sense.example.is_empty() {
+                    ui.add_space(4.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new(sense.example).size(14.5));
+                        ui::speak_buttons(ui, sense.example);
+                    });
+                    // Spec 1.4: remember we showed it, so no test re-uses it.
+                    ctx.shown.mark(sense.id);
+                }
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui::pos_chip(ui, sense.pos);
+                    ui::state_chip(ui, ctx.progress.state(sense));
+                });
+            }
+        });
+
         // Spec 1.1: "cũng là dạng của …".
         let forms = search::forms_of(ctx.dict, word.norm);
         if !forms.is_empty() {
+            ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("also").size(12.0).color(ui::muted(ui)));
+                let muted = ui::muted(ui);
+                ui.label(RichText::new("also").size(12.0).color(muted));
                 for (lemma, tag) in forms {
                     if ui
-                        .link(RichText::new(format!("{} of {}", tag, lemma.text)).size(12.0))
+                        .link(RichText::new(format!("{tag} of {}", lemma.text)).size(12.0))
                         .clicked()
                     {
                         state.open(lemma.id);
@@ -322,64 +369,66 @@ fn word_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Word
                 }
             });
         }
-        ui.add_space(4.0);
-    });
 
-    // --- action bar, fixed (spec 1.4) ---
-    let focused = meanings.get(state.focus).copied();
-    if let Some(sense) = focused {
-        action_bar(ui, ctx, state, &sense);
-    }
-
-    egui::ScrollArea::vertical().show(ui, |ui| {
         if meanings.is_empty() {
             ui.add_space(12.0);
+            let muted = ui::muted(ui);
             ui.label(
-                RichText::new("This entry is only an inflected form of another word.")
-                    .color(ui::muted(ui)),
+                RichText::new("This entry is only an inflected form of another word.").color(muted),
             );
         }
-        // --- sense cards (spec 1.2: one sense, one learning item) ---
-        for (i, sense) in meanings.iter().enumerate() {
-            let selected = i == state.focus;
-            let state_now = ctx.progress.state(sense);
-            let response = ui::card(ui, selected.then_some(ui::accent(ui)), |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(
-                        RichText::new(format!("{}.", i + 1))
-                            .strong()
-                            .color(ui::muted(ui)),
-                    );
-                    ui::pos_chip(ui, sense.pos);
-                    ui::state_chip(ui, state_now);
-                    if sense.rank > 0 {
-                        ui::band_chip(ui, sense.band(), sense.rank);
-                    }
-                });
-                ui.label(RichText::new(sense.def).size(15.5));
-                if !sense.example.is_empty() {
-                    ui.add_space(2.0);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(
-                            RichText::new(sense.example)
-                                .size(13.5)
-                                .italics()
-                                .color(ui::muted(ui)),
-                        );
-                        ui::speak_buttons(ui, sense.example);
+
+        // --- the other meanings (spec 1.2: one sense, one learning item) ---
+        if meanings.len() > 1 {
+            ui::section(ui, "All meanings", |ui| {
+                for (i, sense) in meanings.iter().enumerate() {
+                    let selected = i == state.focus;
+                    let state_now = ctx.progress.state(sense);
+                    let accent = ui::accent(ui);
+                    let response = ui::card(ui, selected.then_some(accent), |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            let muted = ui::muted(ui);
+                            ui.label(RichText::new(format!("{}.", i + 1)).strong().color(muted));
+                            ui::pos_chip(ui, sense.pos);
+                            ui::state_chip(ui, state_now);
+                            if sense.rank > 0 {
+                                ui::band_chip(ui, sense.band(), sense.rank);
+                            }
+                        });
+                        ui.label(RichText::new(sense.def).size(15.0));
                     });
-                    // Spec 1.4: remember we showed it, so no test re-uses it.
-                    ctx.shown.mark(sense.id);
+                    if ui::card_clicked(ui, &response) {
+                        state.focus = i;
+                    }
+                    ui.add_space(4.0);
                 }
             });
-            if ui::card_clicked(ui, &response) {
-                state.focus = i;
-            }
-            ui.add_space(4.0);
         }
 
-        usage_block(ui, ctx, state, id);
-        ui.add_space(60.0);
+        // Spec 1.3's "Cách dùng", behind the reference's "Learn more…".
+        let has_usage = !ctx.dict.relations(id).is_empty()
+            || ctx
+                .dict
+                .with_prefix(&format!("{} ", word.norm))
+                .next()
+                .is_some();
+        if has_usage {
+            ui.add_space(6.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let label = if state.show_usage {
+                    "Show less"
+                } else {
+                    "Learn more…"
+                };
+                if ui.link(RichText::new(label).size(13.0)).clicked() {
+                    state.show_usage = !state.show_usage;
+                }
+            });
+            if state.show_usage {
+                usage_block(ui, ctx, state, id);
+            }
+        }
+        ui.add_space(70.0);
     });
 }
 
@@ -453,61 +502,52 @@ fn usage_block(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Wo
     });
 }
 
-/// The three buttons of spec 1.4, pinned to the bottom of the word page.
+/// Spec 1.4's actions, pinned to the bottom of the word page.
+///
+/// Two of them are large and coloured, as in the reference design; Quick Test
+/// is the third the spec calls for, kept as a lighter action beside "Learn
+/// more" so the decision the user actually came to make stays unambiguous.
 fn action_bar(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, sense: &Sense) {
     egui::Panel::bottom("actions").show(ui, |ui| {
-        ui.add_space(5.0);
+        ui.add_space(4.0);
         let current = ctx.progress.state(sense);
-        let accent = ui::accent(ui);
-        ui.columns(3, |c| {
-            if c[0]
-                .add_sized(
-                    [c[0].available_width(), 40.0],
-                    egui::Button::new(RichText::new("I know this").size(13.5)),
-                )
-                .clicked()
-            {
-                let undo = ctx
-                    .progress
-                    .set_state(sense.id, State::Known, Source::Manual, ctx.day);
-                ctx.say_undoable("Marked as known.", undo);
-            }
-            if c[1]
-                .add_sized(
-                    [c[1].available_width(), 40.0],
-                    egui::Button::new(RichText::new("Quick test").size(13.5)),
-                )
-                .clicked()
-            {
-                state.test = Some(build_quick_test(ctx, sense));
-            }
-            let learn = egui::Button::new(
-                RichText::new("Learn this")
-                    .size(13.5)
-                    .color(accent)
-                    .strong(),
-            );
-            if c[2]
-                .add_sized([c[2].available_width(), 40.0], learn)
-                .clicked()
-            {
-                let undo = ctx
-                    .progress
-                    .start_learning(sense.id, Source::Manual, ctx.day);
-                ctx.say_undoable("Added to your learning list.", undo);
-            }
-        });
-        if current != State::Unexplored {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new("Selected sense:")
-                        .size(11.5)
-                        .color(ui::muted(ui)),
-                );
+
+        ui.horizontal(|ui| {
+            if current != State::Unexplored {
                 ui::state_chip(ui, current);
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let muted = ui::muted(ui);
+                if ui
+                    .link(RichText::new("Quick test").size(12.5).color(muted))
+                    .clicked()
+                {
+                    state.test = Some(build_quick_test(ctx, sense));
+                }
             });
+        });
+        ui.add_space(4.0);
+
+        let (accent, good) = (ui::accent(ui), ui::good(ui));
+        let mut learn = false;
+        let mut knew = false;
+        ui.columns(2, |c| {
+            learn = ui::action_button(&mut c[0], "Should Learn", accent).clicked();
+            knew = ui::action_button(&mut c[1], "Already Knew", good).clicked();
+        });
+        if learn {
+            let undo = ctx
+                .progress
+                .start_learning(sense.id, Source::Manual, ctx.day);
+            ctx.say_undoable("Added to your learning list.", undo);
         }
-        ui.add_space(5.0);
+        if knew {
+            let undo = ctx
+                .progress
+                .set_state(sense.id, State::Known, Source::Manual, ctx.day);
+            ctx.say_undoable("Marked as known.", undo);
+        }
+        ui.add_space(6.0);
     });
 }
 
@@ -661,4 +701,25 @@ fn pick_question(
         return Some(p == choice.answer);
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dict::Dict;
+
+    #[test]
+    fn the_usage_block_starts_folded_away_on_every_word() {
+        // "Learn more…" is the affordance that opens it, so a freshly opened
+        // word must never arrive already unfolded.
+        let mut state = LookupState::default();
+        let dict = Dict::load();
+        state.show_usage = true;
+        state.open(dict.exact("run").unwrap().id);
+        assert!(!state.show_usage);
+
+        state.show_usage = true;
+        state.open(dict.exact("decision").unwrap().id);
+        assert!(!state.show_usage, "carried over from the previous word");
+    }
 }

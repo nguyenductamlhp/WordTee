@@ -457,6 +457,62 @@ fn arc(
     painter.add(egui::Shape::line(points, stroke));
 }
 
+/// Where a word's illustration goes (spec 1.3, media layer 2).
+///
+/// No artwork ships: images are V2 in the spec's own roadmap, and no free
+/// source carries one per headword. The block is drawn at the size and place
+/// the real thing would take, so adding art later is a swap rather than a
+/// re-layout — and a neutral frame reads as "nothing here yet" where a stock
+/// photo would read as a wrong answer.
+pub fn illustration_slot(ui: &mut egui::Ui) {
+    let width = ui.available_width();
+    // 16:9, and never so tall on a wide window that it pushes the word off.
+    let height = (width * 0.5625).min(190.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let painter = ui.painter();
+    let line = muted(ui).gamma_multiply(0.45);
+    painter.rect(
+        rect,
+        10.0,
+        toward_background(ui, muted(ui), 0.10),
+        egui::Stroke::new(1.0, line),
+        egui::StrokeKind::Inside,
+    );
+
+    // A picture mark: a horizon and a sun, at a size that reads as a symbol
+    // rather than a broken image.
+    let unit = (height * 0.30).min(46.0);
+    let box_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(unit));
+    let at = |x: f32, y: f32| box_rect.min + egui::vec2(unit * x, unit * y);
+    let stroke = egui::Stroke::new((unit * 0.07).max(1.2), line);
+    painter.rect(
+        box_rect,
+        unit * 0.12,
+        Color32::TRANSPARENT,
+        stroke,
+        egui::StrokeKind::Inside,
+    );
+    painter.circle_filled(at(0.30, 0.30), unit * 0.09, line);
+    painter.add(egui::Shape::convex_polygon(
+        vec![at(0.12, 0.82), at(0.44, 0.40), at(0.76, 0.82)],
+        line,
+        egui::Stroke::NONE,
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        vec![at(0.52, 0.82), at(0.72, 0.56), at(0.90, 0.82)],
+        line,
+        egui::Stroke::NONE,
+    ));
+}
+
+/// A large primary action, the shape the two word-page buttons take.
+pub fn action_button(ui: &mut egui::Ui, text: &str, color: Color32) -> egui::Response {
+    let button = egui::Button::new(RichText::new(text).size(15.0).strong().color(color))
+        .fill(toward_background(ui, color, 0.20))
+        .stroke(egui::Stroke::new(1.5, toward_background(ui, color, 0.7)));
+    ui.add_sized([ui.available_width(), 46.0], button)
+}
+
 /// A small square button carrying one icon.
 pub fn icon_button(ui: &mut egui::Ui, icon: Icon, tooltip: &str) -> egui::Response {
     const SIDE: f32 = 28.0;
