@@ -176,6 +176,7 @@ impl WordTeeApp {
     /// up without an [`eframe::CreationContext`].
     pub fn configure_style(ctx: &egui::Context) {
         Self::install_font(ctx);
+        Self::paint_surfaces(ctx);
         Self::apply_theme(ctx, Theme::default());
         ctx.all_styles_mut(|style| {
             // The default sizes are tuned for a mouse pointer and read small
@@ -185,12 +186,6 @@ impl WordTeeApp {
             }
             style.spacing.button_padding = egui::vec2(10.0, 6.0);
             style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-            let accent = if style.visuals.dark_mode {
-                egui::Color32::from_rgb(0x4d, 0xb6, 0xf5)
-            } else {
-                egui::Color32::from_rgb(0x0b, 0x6f, 0xc2)
-            };
-            style.visuals.selection.bg_fill = accent.gamma_multiply(0.35);
         });
     }
 
@@ -200,6 +195,78 @@ impl WordTeeApp {
             Theme::Light => egui::ThemePreference::Light,
             Theme::Dark => egui::ThemePreference::Dark,
         });
+    }
+
+    /// Paints egui's own surfaces in the reference design's colours.
+    ///
+    /// The palette in `ui` covers what this app draws itself; this covers what
+    /// egui draws for it — panels, cards, text fields, buttons, selections. Set
+    /// once per theme rather than per frame, and per theme rather than shared,
+    /// since the two schemes disagree about nearly every value.
+    fn paint_surfaces(ctx: &egui::Context) {
+        use egui::Color32;
+
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let dark = theme == egui::Theme::Dark;
+            // Page, card, and the sunken well a text field sits in.
+            let (page, card, well) = if dark {
+                (
+                    Color32::from_rgb(0x17, 0x11, 0x1F),
+                    Color32::from_rgb(0x23, 0x1A, 0x2E),
+                    Color32::from_rgb(0x11, 0x0C, 0x17),
+                )
+            } else {
+                (
+                    Color32::from_rgb(0xEE, 0xF3, 0xF7),
+                    Color32::WHITE,
+                    Color32::WHITE,
+                )
+            };
+            // Body text keeps the brand's violet cast rather than going black.
+            let ink = if dark {
+                Color32::from_rgb(0xEC, 0xE4, 0xF2)
+            } else {
+                Color32::from_rgb(0x26, 0x00, 0x36)
+            };
+            let accent = if dark {
+                Color32::from_rgb(0xCB, 0x8B, 0xFF)
+            } else {
+                Color32::from_rgb(0xA7, 0x22, 0xEC)
+            };
+
+            ctx.style_mut_of(theme, |style| {
+                let v = &mut style.visuals;
+                v.panel_fill = page;
+                v.window_fill = card;
+                v.extreme_bg_color = well;
+                // `card` and the chip tints are built from this.
+                v.faint_bg_color = card;
+                v.override_text_color = Some(ink);
+                v.hyperlink_color = accent;
+                v.selection.bg_fill = accent.gamma_multiply(0.35);
+                v.selection.stroke.color = accent;
+
+                // Buttons: a quiet surface that lifts on hover, in the same
+                // family as the page rather than egui's neutral greys.
+                let widgets = &mut v.widgets;
+                widgets.noninteractive.bg_fill = card;
+                widgets.noninteractive.weak_bg_fill = card;
+                widgets.inactive.bg_fill = if dark {
+                    Color32::from_rgb(0x2E, 0x23, 0x3B)
+                } else {
+                    Color32::from_rgb(0xE4, 0xEA, 0xF2)
+                };
+                widgets.inactive.weak_bg_fill = widgets.inactive.bg_fill;
+                widgets.hovered.bg_fill = if dark {
+                    Color32::from_rgb(0x3D, 0x2E, 0x4E)
+                } else {
+                    Color32::from_rgb(0xD8, 0xE1, 0xEC)
+                };
+                widgets.hovered.weak_bg_fill = widgets.hovered.bg_fill;
+                widgets.active.bg_fill = accent.gamma_multiply(if dark { 0.5 } else { 0.25 });
+                widgets.active.weak_bg_fill = widgets.active.bg_fill;
+            });
+        }
     }
 
     /// Puts [`UI_FONT`] in front of the bundled fonts.

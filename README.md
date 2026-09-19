@@ -121,9 +121,23 @@ Shapes take about as many lines, always match the text colour beside them, and
 cannot go missing. The caption under each is painted too, so it is one centred
 line at any width — the labels used to wrap and buckle the bar.
 
+**Colours.** Taken from the reference design and sampled from it rather than
+guessed: purple `#AE24F6` carries the brand, teal `#30BFD0` stands for *known*,
+and the page is a pale blue-grey under white cards, with ink that keeps a violet
+cast instead of going black.
+
+Those two brand values are **fills**. As text on white the teal reads at 2.2:1,
+well under the 4.5:1 small text needs, so every text colour is a darker member
+of the same family — and the big filled buttons pick their label by contrast, so
+"Should Learn" gets white and "Already Knew" gets ink. A test walks every text
+colour against both surfaces in both themes and fails under 4.5:1; another
+checks the filled buttons. Reaching for the bright colour because it matches the
+button is how a palette ends up unreadable, and that is the failure these are
+there to catch.
+
 **Themes.** Light by default, dark on request, switchable under **You →
 Settings** and saved with the rest of your progress. Colours are chosen per
-theme rather than shared: a blue legible on near-black washes out on white.
+theme rather than shared: a purple legible on near-black washes out on white.
 
 **Reminders (spec 3.6).** Off, every 4h, every 8h or once a day, under the same
 settings. An interval rather than a clock time, because `SystemTime` is UTC on

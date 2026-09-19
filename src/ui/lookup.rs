@@ -528,12 +528,13 @@ fn action_bar(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, sense: 
         });
         ui.add_space(4.0);
 
-        let (accent, good) = (ui::accent(ui), ui::good(ui));
+        // The vivid brand fills, not the darkened text variants.
+        let (purple, teal) = (ui::BRAND_PURPLE, ui::BRAND_TEAL);
         let mut learn = false;
         let mut knew = false;
         ui.columns(2, |c| {
-            learn = ui::action_button(&mut c[0], "Should Learn", accent).clicked();
-            knew = ui::action_button(&mut c[1], "Already Knew", good).clicked();
+            learn = ui::action_button(&mut c[0], "Should Learn", purple).clicked();
+            knew = ui::action_button(&mut c[1], "Already Knew", teal).clicked();
         });
         if learn {
             let undo = ctx

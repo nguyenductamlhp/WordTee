@@ -11,74 +11,107 @@ use eframe::egui::{self, Color32, RichText};
 use crate::dict::{Band, Pos};
 use crate::progress::State;
 
+// ## Palette
+//
+// Sampled from the reference design: a vivid purple carries the brand, a teal
+// stands for "known", and the page sits on a pale blue-grey with white cards.
+//
+// The two families are used at two strengths, and that distinction matters.
+// `#AE24F6` and `#30BFD0` are the *fill* colours — they are what the map
+// squares and the big buttons are painted with. As text on white the teal
+// only reaches 2.2:1, well under the 4.5:1 that small text needs, so the text
+// colours below are darker members of the same families. Reaching for the
+// bright one because it matches the button is how a palette ends up unreadable.
+
+/// Reference purple. Fills only — see the note above.
+pub const BRAND_PURPLE: Color32 = Color32::from_rgb(0xAE, 0x24, 0xF6);
+/// Reference teal. Fills only.
+pub const BRAND_TEAL: Color32 = Color32::from_rgb(0x30, 0xBF, 0xD0);
+
 /// Picks the value for the theme in use.
 ///
-/// The two themes need different colours, not one shared mid-tone: a blue
-/// legible on near-black washes out on white, and an amber legible on white
-/// goes muddy on black.
+/// The two themes need different colours, not one shared mid-tone: a purple
+/// legible on near-black washes out on white, and the reverse.
 fn pick(ui: &egui::Ui, dark: Color32, light: Color32) -> Color32 {
     if ui.visuals().dark_mode { dark } else { light }
 }
 
-/// The app's accent, inherited from the original tap-counter build.
+/// The brand purple, at a strength that reads as text.
+///
+/// Four percent darker than [`BRAND_PURPLE`], which lands at 4.29:1 on the
+/// page — close enough to pass for the same colour, far enough to clear the
+/// 4.5:1 floor.
 pub fn accent(ui: &egui::Ui) -> Color32 {
     pick(
         ui,
-        Color32::from_rgb(0x4d, 0xb6, 0xf5),
-        Color32::from_rgb(0x0b, 0x6f, 0xc2),
+        Color32::from_rgb(0xCB, 0x8B, 0xFF),
+        Color32::from_rgb(0xA7, 0x22, 0xEC),
     )
 }
 
+/// "Known", "right", "kept" — the teal family, darkened for text.
 pub fn good(ui: &egui::Ui) -> Color32 {
     pick(
         ui,
-        Color32::from_rgb(0x66, 0xbb, 0x6a),
-        Color32::from_rgb(0x2e, 0x7d, 0x32),
+        Color32::from_rgb(0x4D, 0xD4, 0xE4),
+        Color32::from_rgb(0x0E, 0x76, 0x84),
     )
 }
 
 pub fn warn(ui: &egui::Ui) -> Color32 {
     pick(
         ui,
-        Color32::from_rgb(0xf5, 0xb3, 0x41),
-        Color32::from_rgb(0xa5, 0x62, 0x00),
+        Color32::from_rgb(0xF5, 0xB3, 0x41),
+        Color32::from_rgb(0x9A, 0x5B, 0x00),
     )
 }
 
 pub fn bad(ui: &egui::Ui) -> Color32 {
     pick(
         ui,
-        Color32::from_rgb(0xef, 0x53, 0x50),
-        Color32::from_rgb(0xc6, 0x28, 0x28),
+        Color32::from_rgb(0xFF, 0x77, 0x8A),
+        Color32::from_rgb(0xC0, 0x1E, 0x4B),
     )
 }
 
-/// Secondary text: quiet, but still clear of the contrast floor either way.
+/// Secondary text: the reference's grey has a violet cast, kept but darkened
+/// to clear the contrast floor.
 pub fn muted(ui: &egui::Ui) -> Color32 {
-    pick(ui, Color32::from_gray(0x9a), Color32::from_gray(0x5e))
-}
-
-// Spec 2.3's four map colours. These are fills rather than text, so the three
-// coloured ones hold up on either theme; only "unexplored" has to flip, since
-// it is the empty part of the bar and has to read as background.
-pub fn c_known(_ui: &egui::Ui) -> Color32 {
-    Color32::from_rgb(0x2e, 0x7d, 0x32)
-}
-
-pub fn c_assumed(_ui: &egui::Ui) -> Color32 {
-    Color32::from_rgb(0x7c, 0xb3, 0x42)
-}
-
-pub fn c_learning(ui: &egui::Ui) -> Color32 {
     pick(
         ui,
-        Color32::from_rgb(0xf5, 0xb3, 0x41),
-        Color32::from_rgb(0xe8, 0x9c, 0x0e),
+        Color32::from_rgb(0xA3, 0x97, 0xAD),
+        Color32::from_rgb(0x6E, 0x5F, 0x6B),
     )
+}
+
+// Spec 2.3's four map colours, straight off the reference's own grid: teal for
+// what is known, purple for what is being learned, and a pale wash for what has
+// not been met. These are fills, so they use the bright brand colours.
+pub fn c_known(_ui: &egui::Ui) -> Color32 {
+    BRAND_TEAL
+}
+
+pub fn c_assumed(ui: &egui::Ui) -> Color32 {
+    // Inferred, not confirmed: the same teal, stepped back.
+    pick(
+        ui,
+        Color32::from_rgb(0x2C, 0x84, 0x90),
+        Color32::from_rgb(0x8E, 0xDA, 0xE4),
+    )
+}
+
+pub fn c_learning(_ui: &egui::Ui) -> Color32 {
+    BRAND_PURPLE
 }
 
 pub fn c_unexplored(ui: &egui::Ui) -> Color32 {
-    pick(ui, Color32::from_gray(0x3c), Color32::from_gray(0xdc))
+    // Distinct from the page behind it, or the empty part of a bar would read
+    // as no bar at all.
+    pick(
+        ui,
+        Color32::from_rgb(0x33, 0x29, 0x43),
+        Color32::from_rgb(0xCF, 0xD8, 0xE4),
+    )
 }
 
 /// The colour a state gets on the map and on its chip.
@@ -505,11 +538,52 @@ pub fn illustration_slot(ui: &mut egui::Ui) {
     ));
 }
 
+/// Relative luminance, for choosing a legible label.
+fn luminance(c: Color32) -> f32 {
+    let channel = |v: u8| {
+        let s = v as f32 / 255.0;
+        if s <= 0.03928 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(c.r()) + 0.7152 * channel(c.g()) + 0.0722 * channel(c.b())
+}
+
+/// A label colour that can actually be read on `fill`.
+///
+/// White on the brand purple is fine; white on the brand teal is 2.2:1, so the
+/// two buttons sitting side by side need different labels. Picking by contrast
+/// rather than by habit means a change of fill cannot quietly make a button
+/// unreadable.
+pub fn readable_on(fill: Color32) -> Color32 {
+    const PALE: Color32 = Color32::from_rgb(0xFF, 0xFF, 0xFF);
+    const INK: Color32 = Color32::from_rgb(0x1A, 0x00, 0x26);
+    let ratio = |a: Color32| {
+        let (hi, lo) = (
+            luminance(a).max(luminance(fill)),
+            luminance(a).min(luminance(fill)),
+        );
+        (hi + 0.05) / (lo + 0.05)
+    };
+    if ratio(PALE) >= ratio(INK) { PALE } else { INK }
+}
+
 /// A large primary action, the shape the two word-page buttons take.
-pub fn action_button(ui: &mut egui::Ui, text: &str, color: Color32) -> egui::Response {
-    let button = egui::Button::new(RichText::new(text).size(15.0).strong().color(color))
-        .fill(toward_background(ui, color, 0.20))
-        .stroke(egui::Stroke::new(1.5, toward_background(ui, color, 0.7)));
+///
+/// Solid brand colour, as in the reference: these are the one place the vivid
+/// fills belong, and a filled button is what makes them read as the decision.
+pub fn action_button(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
+    let button = egui::Button::new(
+        RichText::new(text)
+            .size(15.0)
+            .strong()
+            .color(readable_on(fill)),
+    )
+    .fill(fill)
+    .stroke(egui::Stroke::NONE)
+    .corner_radius(8);
     ui.add_sized([ui.available_width(), 46.0], button)
 }
 
@@ -709,6 +783,116 @@ mod tests {
             }
         })
         .drop_without_applying_deltas();
+    }
+
+    /// WCAG relative luminance.
+    fn luminance(c: Color32) -> f32 {
+        let channel = |v: u8| {
+            let s = v as f32 / 255.0;
+            if s <= 0.03928 {
+                s / 12.92
+            } else {
+                ((s + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(c.r()) + 0.7152 * channel(c.g()) + 0.0722 * channel(c.b())
+    }
+
+    /// WCAG contrast ratio, 1.0 (identical) to 21.0 (black on white).
+    fn contrast(a: Color32, b: Color32) -> f32 {
+        let (hi, lo) = (
+            luminance(a).max(luminance(b)),
+            luminance(a).min(luminance(b)),
+        );
+        (hi + 0.05) / (lo + 0.05)
+    }
+
+    #[test]
+    fn every_text_colour_is_legible_on_both_surfaces() {
+        // The palette is taken from a reference design, and its brand colours
+        // are *fills*: the teal reads at 2.2:1 as text on white, far under the
+        // floor. This is the guard against someone reaching for the bright one
+        // because it matches the button.
+        const FLOOR: f32 = 4.5;
+        for dark in [true, false] {
+            let ctx = egui::Context::default();
+            ctx.set_theme(if dark {
+                egui::ThemePreference::Dark
+            } else {
+                egui::ThemePreference::Light
+            });
+            crate::WordTeeApp::configure_style(&ctx);
+            ctx.set_theme(if dark {
+                egui::ThemePreference::Dark
+            } else {
+                egui::ThemePreference::Light
+            });
+            ctx.run_ui(Default::default(), |ui| {
+                let page = ui.visuals().panel_fill;
+                let card = ui.visuals().faint_bg_color;
+                let ink = ui.visuals().text_color();
+                for (name, color) in [
+                    ("ink", ink),
+                    ("accent", accent(ui)),
+                    ("good", good(ui)),
+                    ("warn", warn(ui)),
+                    ("bad", bad(ui)),
+                    ("muted", muted(ui)),
+                ] {
+                    for (surface, bg) in [("page", page), ("card", card)] {
+                        let ratio = contrast(color, bg);
+                        assert!(
+                            ratio >= FLOOR,
+                            "dark={dark}: {name} on {surface} is {ratio:.2}:1, under {FLOOR}"
+                        );
+                    }
+                }
+            })
+            .drop_without_applying_deltas();
+        }
+    }
+
+    #[test]
+    fn a_filled_button_gets_a_label_it_can_carry() {
+        // White reads on the purple and not on the teal, which is exactly why
+        // the label is chosen by contrast instead of being fixed.
+        for fill in [BRAND_PURPLE, BRAND_TEAL, Color32::BLACK, Color32::WHITE] {
+            let ratio = contrast(readable_on(fill), fill);
+            assert!(ratio >= 4.5, "label on {fill:?} is {ratio:.2}:1");
+        }
+        // And it really does pick differently for the two brand colours.
+        assert_ne!(readable_on(BRAND_PURPLE), readable_on(BRAND_TEAL));
+    }
+
+    #[test]
+    fn the_map_fills_are_visible_against_the_card() {
+        // These are fills, not text, so they answer to a lower bar — but the
+        // empty part of a bar still has to look like part of a bar.
+        for dark in [true, false] {
+            let ctx = egui::Context::default();
+            crate::WordTeeApp::configure_style(&ctx);
+            ctx.set_theme(if dark {
+                egui::ThemePreference::Dark
+            } else {
+                egui::ThemePreference::Light
+            });
+            ctx.run_ui(Default::default(), |ui| {
+                let card = ui.visuals().faint_bg_color;
+                for (name, color) in [
+                    ("known", c_known(ui)),
+                    ("assumed", c_assumed(ui)),
+                    ("learning", c_learning(ui)),
+                    ("unexplored", c_unexplored(ui)),
+                ] {
+                    let ratio = contrast(color, card);
+                    assert!(
+                        ratio >= 1.2,
+                        "dark={dark}: {name} is {ratio:.2}:1 on the card"
+                    );
+                }
+            })
+            .drop_without_applying_deltas();
+        }
     }
 
     #[test]
