@@ -110,8 +110,18 @@ scheduled by FSRS-5 with a retention target you can set between 0,8 and 0,95;
 you never grade yourself, the grade comes from how the exercise went. Exercises
 climb three levels as a card stabilises: recognise → recall → produce.
 
-**Map (spec 2.3).** 25 blocks of 1,000 items, each with the spec's four-colour
-bar. Inferred progress is hatched so it never reads as confirmed.
+**Map (spec 2.3).** Two views of the same thing. The grid is what the reference
+design shows and what the tab opens on: the word you are pointed at, a range
+picker, and a square per learning item — a hundred at a time, teal for known,
+purple for learning, a pale wash for unmet. Tapping a square moves the card;
+**Should Learn** and **Already Knew** act on it without leaving the screen. It
+opens at the range holding your frontier rather than at rank 1.
+
+Behind the **Blocks** toggle is the overview spec 2.3 actually specifies: 25
+blocks of 1,000, each with the four-colour bar, inferred progress hatched so it
+never reads as confirmed. The grid answers "what is in front of me" and the
+overview answers "how far along am I"; neither answers the other, which is why
+both are kept.
 
 **Icons.** Painted with egui's own shapes rather than typed: a house, a
 mortarboard, a grid of blocks that mirrors the knowledge map, a magnifier, a

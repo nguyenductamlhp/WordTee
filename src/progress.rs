@@ -356,6 +356,19 @@ impl Progress {
         earned.max(floor).clamp(0.0, 1.0)
     }
 
+    /// The state of one item from its id and rank alone.
+    ///
+    /// [`Self::state`] needs a whole [`Sense`], which means decoding its
+    /// definition and example. The map paints a hundred squares a frame and
+    /// needs none of that text.
+    pub fn state_at(&self, sense: SenseId, rank: u32) -> State {
+        match self.cards.get(&sense) {
+            Some(card) => card.state,
+            None if rank > 0 && rank <= self.assumed_below => State::AssumedKnown,
+            None => State::Unexplored,
+        }
+    }
+
     pub fn card(&self, sense: SenseId) -> Option<&Card> {
         self.cards.get(&sense)
     }
@@ -434,12 +447,7 @@ impl Progress {
     pub fn tally(&self, ranks: impl Iterator<Item = (SenseId, u32)>) -> [u32; 6] {
         let mut out = [0u32; 6];
         for (id, rank) in ranks {
-            let state = match self.cards.get(&id) {
-                Some(card) => card.state,
-                None if rank > 0 && rank <= self.assumed_below => State::AssumedKnown,
-                None => State::Unexplored,
-            };
-            out[state as usize] += 1;
+            out[self.state_at(id, rank) as usize] += 1;
         }
         out
     }

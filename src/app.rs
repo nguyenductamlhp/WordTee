@@ -627,6 +627,23 @@ mod tests {
                 if line.trim_start().starts_with("//") {
                     continue;
                 }
+                // `\u{2039}` is as much a drawn character as a pasted one, so
+                // the escapes are decoded rather than skipped over. Missing
+                // that is how an unrenderable glyph slips past this.
+                let mut rest = line;
+                while let Some(at) = rest.find("\\u{") {
+                    rest = &rest[at + 3..];
+                    if let Some(end) = rest.find('}')
+                        && let Ok(code) = u32::from_str_radix(&rest[..end], 16)
+                        && let Some(c) = char::from_u32(code)
+                    {
+                        if !c.is_ascii() {
+                            seen.insert(c);
+                        }
+                        rest = &rest[end..];
+                    }
+                }
+
                 let mut in_string = false;
                 let mut escaped = false;
                 for c in line.chars() {
@@ -916,18 +933,30 @@ mod tests {
     }
 
     #[test]
-    fn the_map_renders_and_opens_a_block() {
+    fn the_map_renders_both_views() {
         let mut h = Harness::new();
         h.app.progress.apply_placement(4_500, 8.4);
         h.app
             .progress
             .start_learning(h.item(5_000), Source::Manual, h.app.day);
         h.on(Tab::Map);
-        // The overview, then a block drill-down.
-        h.app.map.open_block(3);
+        // The grid, at a few ranges, then the block overview behind the toggle.
+        for block in [0, 3, 24] {
+            h.app.map.open_block(block);
+            h.settle();
+        }
+        h.app.map.show_rank(12_345);
         h.settle();
-        h.app.map.open_block(24);
+    }
+
+    #[test]
+    fn the_map_opens_where_the_user_is_working() {
+        // Not at rank 1: the frontier is the part of the list that matters.
+        let mut h = Harness::new();
+        h.app.progress.apply_placement(4_500, 8.4);
+        h.on(Tab::Map);
         h.settle();
+        assert_eq!(h.app.map.range_start(), 4_501);
     }
 
     #[test]
