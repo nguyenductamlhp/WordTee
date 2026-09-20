@@ -161,12 +161,14 @@ fn grid_view(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
 /// empty picture frame would push it off the bottom.
 fn word_card(ui: &mut egui::Ui, ctx: &mut Ctx, sense: crate::dict::Sense) {
     let word = ctx.dict.word(sense.word);
+    let voice = ctx.progress.accent;
+    let headword = ctx.progress.casing.apply(word.text);
     let mut open = false;
     let response = ui::card(ui, None, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(word.text).size(26.0).strong());
+            ui.label(RichText::new(headword).size(26.0).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui::speak_buttons(ui, word.text);
+                ui::speak_buttons(ui, word.text, voice);
             });
         });
         if !word.ipa.is_empty() {
@@ -176,7 +178,7 @@ fn word_card(ui: &mut egui::Ui, ctx: &mut Ctx, sense: crate::dict::Sense) {
         ui.add_space(4.0);
         let accent = ui::accent(ui);
         ui.label(RichText::new(sense.def).size(16.5).color(accent));
-        if !sense.example.is_empty() {
+        if !sense.example.is_empty() && ctx.progress.show_examples {
             ui.label(RichText::new(sense.example).size(13.5));
         }
         ui.add_space(4.0);
@@ -387,13 +389,14 @@ fn blocks_view(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
 pub fn scan_card(ui: &mut egui::Ui, ctx: &mut Ctx, sense: SenseId) -> bool {
     let sense = ctx.dict.sense(sense);
     let word = ctx.dict.word(sense.word);
+    let headword = ctx.progress.casing.apply(word.text);
     let mut answered = false;
 
     let accent = ui::accent(ui);
     ui::card(ui, Some(accent), |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(6.0);
-            ui.label(RichText::new(word.text).size(30.0).strong());
+            ui.label(RichText::new(headword).size(30.0).strong());
             if !word.ipa.is_empty() {
                 let muted = ui::muted(ui);
                 ui.label(RichText::new(word.ipa).size(14.0).color(muted));

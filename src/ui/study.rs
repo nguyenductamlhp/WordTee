@@ -293,12 +293,18 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
     // Build the question for this task the first time we see it.
     if state.active.as_ref().is_none_or(|a| a.task != task) {
         let sense = ctx.dict.sense(task.sense());
-        let level = match task {
+        let earned = match task {
             // Spec 3.3: a brand-new item is read, not tested.
             Task::New(_) => 0,
             // Spec 3.5: checks are level-2 exercises.
             Task::Verify(_) => 2,
             Task::Review(id) => ctx.progress.card(id).map_or(1, |c| c.level),
+        };
+        // Whatever the card has earned, only ask what the user allows.
+        let level = if earned == 0 {
+            0
+        } else {
+            ctx.progress.challenges.level_for(earned)
         };
         state.active = Some(Active {
             task,
@@ -312,6 +318,8 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
     }
     let sense = ctx.dict.sense(task.sense());
     let word = ctx.dict.word(sense.word);
+    let voice = ctx.progress.accent;
+    let headword = ctx.progress.casing.apply(word.text);
 
     // The question is drawn with only `state.active` borrowed; grading needs
     // `state` as a whole, so it happens after that borrow has ended.
@@ -332,8 +340,8 @@ fn session_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
             Exercise::Study => {
                 ui::card(ui, Some(ui::accent(ui)), |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(word.text).size(26.0).strong());
-                        ui::speak_buttons(ui, word.text);
+                        ui.label(RichText::new(headword).size(26.0).strong());
+                        ui::speak_buttons(ui, word.text, voice);
                     });
                     if !word.ipa.is_empty() {
                         ui.label(RichText::new(word.ipa).size(14.0).color(ui::accent(ui)));

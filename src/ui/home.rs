@@ -114,6 +114,8 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
     };
     let sense = ctx.dict.sense(question.sense);
     let word = ctx.dict.word(sense.word);
+    let voice = ctx.progress.accent;
+    let headword = ctx.progress.casing.apply(word.text);
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.add_space(6.0);
@@ -124,13 +126,13 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
         ui::card(ui, Some(ui::accent(ui)), |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(6.0);
-                ui.label(RichText::new(word.text).size(34.0).strong());
+                ui.label(RichText::new(headword).size(34.0).strong());
                 ui.horizontal(|ui| {
                     if !word.ipa.is_empty() {
                         let color = ui::accent(ui);
                         ui.label(RichText::new(word.ipa).size(15.0).color(color));
                     }
-                    ui::speak_buttons(ui, word.text);
+                    ui::speak_buttons(ui, word.text, voice);
                 });
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {

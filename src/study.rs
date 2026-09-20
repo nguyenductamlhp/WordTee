@@ -506,6 +506,29 @@ mod tests {
     }
 
     #[test]
+    fn turning_off_typing_stops_the_spelling_exercise() {
+        // The setting has to change what a session asks, not just persist.
+        let d = dict();
+        let mut rng = Rng::seeded(21);
+        let shown = Shown::default();
+        let sense = d.at_rank(1_000).unwrap();
+        let all = crate::progress::Challenges::default();
+        assert!(matches!(
+            exercise(&d, &mut rng, &sense, all.level_for(3), &shown),
+            Exercise::Spell
+        ));
+
+        let no_typing = crate::progress::Challenges {
+            produce: false,
+            ..all
+        };
+        assert!(!matches!(
+            exercise(&d, &mut rng, &sense, no_typing.level_for(3), &shown),
+            Exercise::Spell
+        ));
+    }
+
+    #[test]
     fn a_shown_sentence_is_not_reused_as_a_gap_fill() {
         // Spec 1.4: testing on the sentence just read is not a test.
         let d = dict();

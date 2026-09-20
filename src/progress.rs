@@ -100,6 +100,126 @@ impl Reminders {
     }
 }
 
+/// Which English the audio speaks.
+///
+/// The dictionary carries one transcription per word and does not say whose,
+/// so this steers the voice and nothing else — there is no second IPA to show.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Accent {
+    Uk,
+    #[default]
+    Us,
+}
+
+impl Accent {
+    pub const ALL: [Self; 2] = [Self::Uk, Self::Us];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Uk => "UK",
+            Self::Us => "US",
+        }
+    }
+
+    /// BCP-47 tag for the speech synthesiser.
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Uk => "en-GB",
+            Self::Us => "en-US",
+        }
+    }
+}
+
+/// How a headword is capitalised on screen.
+///
+/// The dictionary stores headwords lowercase, which is right for matching and
+/// plain for reading.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Casing {
+    #[default]
+    Sentence,
+    Lower,
+    Upper,
+}
+
+impl Casing {
+    pub const ALL: [Self; 3] = [Self::Sentence, Self::Lower, Self::Upper];
+
+    /// The label doubles as a sample of what it does.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Sentence => "Aa",
+            Self::Lower => "aa",
+            Self::Upper => "AA",
+        }
+    }
+
+    pub fn apply(self, word: &str) -> String {
+        match self {
+            Self::Lower => word.to_lowercase(),
+            Self::Upper => word.to_uppercase(),
+            Self::Sentence => {
+                let mut chars = word.chars();
+                match chars.next() {
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                    None => String::new(),
+                }
+            }
+        }
+    }
+}
+
+/// Which of spec 3.3's three exercise levels the user is willing to be asked.
+///
+/// Turning the last one off would leave nothing to ask, so [`Self::level_for`]
+/// always has an answer: it walks down from the level a card has earned to the
+/// nearest one that is allowed, and recognition is forced back on if all three
+/// are cleared.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Challenges {
+    /// Level 1: pick the meaning.
+    pub recognise: bool,
+    /// Level 2: fill the gap, or pick the word.
+    pub recall: bool,
+    /// Level 3: spell it out.
+    pub produce: bool,
+}
+
+impl Default for Challenges {
+    fn default() -> Self {
+        Self {
+            recognise: true,
+            recall: true,
+            produce: true,
+        }
+    }
+}
+
+impl Challenges {
+    pub fn allows(self, level: u8) -> bool {
+        match level {
+            1 => self.recognise,
+            2 => self.recall,
+            3 => self.produce,
+            _ => true,
+        }
+    }
+
+    /// The highest allowed level at or below `earned`.
+    pub fn level_for(self, earned: u8) -> u8 {
+        (1..=earned.clamp(1, 3))
+            .rev()
+            .find(|l| self.allows(*l))
+            .or_else(|| (1..=3).find(|l| self.allows(*l)))
+            .unwrap_or(1)
+    }
+
+    /// How many are switched on, so the UI can refuse to clear the last one.
+    pub fn count(self) -> usize {
+        usize::from(self.recognise) + usize::from(self.recall) + usize::from(self.produce)
+    }
+}
+
 /// Which colour scheme to draw in.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum Theme {
@@ -243,6 +363,17 @@ pub struct Progress {
     /// FSRS desired retention, 0,8–0,95 (spec 3.2).
     pub retention: f32,
     pub theme: Theme,
+    pub accent: Accent,
+    pub casing: Casing,
+    pub challenges: Challenges,
+    /// Show the example sentence beside a meaning.
+    pub show_examples: bool,
+    /// Speak a word as soon as its card appears.
+    pub auto_pronounce: bool,
+    /// Warn when a streak is about to lapse.
+    pub streak_alerts: bool,
+    /// Call out an item that keeps being missed (spec 3.6's leech).
+    pub hard_word_alert: bool,
     /// How often to nudge about studying (spec 3.6).
     pub reminders: Reminders,
     /// Unix seconds of the last nudge, so one interval means one nudge.
@@ -281,6 +412,13 @@ impl Default for Progress {
             daily_goal: 10,
             retention: 0.9,
             theme: Theme::Light,
+            accent: Accent::default(),
+            casing: Casing::default(),
+            challenges: Challenges::default(),
+            show_examples: true,
+            auto_pronounce: false,
+            streak_alerts: true,
+            hard_word_alert: true,
             reminders: Reminders::default(),
             last_reminded: 0,
             streak: 0,
@@ -1110,6 +1248,73 @@ mod tests {
     }
 
     #[test]
+    fn casing_reshapes_a_headword() {
+        assert_eq!(Casing::Sentence.apply("popular"), "Popular");
+        assert_eq!(Casing::Lower.apply("Popular"), "popular");
+        assert_eq!(Casing::Upper.apply("popular"), "POPULAR");
+        // Multi-word and accented headwords survive intact.
+        assert_eq!(Casing::Sentence.apply("a bit"), "A bit");
+        assert_eq!(Casing::Sentence.apply(""), "");
+        assert_eq!(Casing::Upper.apply("café"), "CAFÉ");
+    }
+
+    #[test]
+    fn each_accent_names_a_voice() {
+        assert_eq!(Accent::Uk.tag(), "en-GB");
+        assert_eq!(Accent::Us.tag(), "en-US");
+        let tags: BTreeSet<_> = Accent::ALL.iter().map(|a| a.tag()).collect();
+        assert_eq!(tags.len(), Accent::ALL.len());
+    }
+
+    #[test]
+    fn challenges_step_down_to_what_is_allowed() {
+        let all = Challenges::default();
+        assert_eq!(all.level_for(3), 3);
+        assert_eq!(all.level_for(1), 1);
+
+        // Typing switched off: a card that has earned level 3 is asked at 2.
+        let no_typing = Challenges {
+            produce: false,
+            ..all
+        };
+        assert_eq!(no_typing.level_for(3), 2);
+        assert_eq!(no_typing.level_for(2), 2);
+
+        // Only recall left: everything is asked at 2, including level 1 cards,
+        // because there is nothing lower to fall back to.
+        let recall_only = Challenges {
+            recognise: false,
+            recall: true,
+            produce: false,
+        };
+        assert_eq!(recall_only.level_for(3), 2);
+        assert_eq!(recall_only.level_for(1), 2);
+    }
+
+    #[test]
+    fn there_is_always_something_to_ask() {
+        // Even a nonsense setting has to yield a level a session can use.
+        for recognise in [true, false] {
+            for recall in [true, false] {
+                for produce in [true, false] {
+                    let c = Challenges {
+                        recognise,
+                        recall,
+                        produce,
+                    };
+                    for earned in 0..=4 {
+                        let level = c.level_for(earned);
+                        assert!((1..=3).contains(&level), "{c:?} at {earned} gave {level}");
+                        if c.count() > 0 {
+                            assert!(c.allows(level), "{c:?} gave a level it forbids");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn progress_survives_a_round_trip() {
         let dict = Dict::load();
         let mut p = Progress::default();
@@ -1121,12 +1326,23 @@ mod tests {
 
         p.reminders = Reminders::EveryEightHours;
         p.mark_reminded(1_700_000_000);
+        p.accent = Accent::Uk;
+        p.casing = Casing::Upper;
+        p.challenges = Challenges {
+            produce: false,
+            ..Challenges::default()
+        };
+        p.show_examples = false;
 
         let text = ron::to_string(&p).expect("serialises");
         let back: Progress = ron::from_str(&text).expect("deserialises");
         assert_eq!(back.assumed_below, 2_500);
         assert_eq!(back.reminders, Reminders::EveryEightHours);
         assert_eq!(back.last_reminded, 1_700_000_000);
+        assert_eq!(back.accent, Accent::Uk);
+        assert_eq!(back.casing, Casing::Upper);
+        assert!(!back.challenges.produce);
+        assert!(!back.show_examples);
         assert_eq!(back.state(&s), p.state(&s));
         assert_eq!(back.card(s.id).unwrap().reps, 1);
         assert!(back.lookups.contains(&s.word));

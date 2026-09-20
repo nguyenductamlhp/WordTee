@@ -5,7 +5,7 @@ use eframe::egui::{self, RichText};
 
 use crate::app::Ctx;
 use crate::placement::{FALSE_ALARM_LIMIT, MAX_ITEMS, Placement, Verdict};
-use crate::progress::{Progress, Reminders, State, Theme};
+use crate::progress::{Accent, Casing, Progress, Reminders, State, Theme};
 use crate::ui;
 
 #[derive(Default)]
@@ -39,6 +39,32 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         return result_page(ui, ctx, state, verdict);
     }
     home(ui, ctx, state);
+}
+
+/// Says where a reminder can actually be delivered on this platform.
+fn reminder_note(ui: &mut egui::Ui, ctx: &mut Ctx) {
+    if ctx.progress.reminders == Reminders::Off {
+        return;
+    }
+    let note = if !ui::can_notify() {
+        "Shown inside the app. Notifications outside it need a platform \
+         integration this build does not have."
+    } else if ui::notifications_allowed() {
+        "Sent as a browser notification while WordTee is open, and shown \
+         inside the app either way."
+    } else {
+        "Shown inside the app. Allow notifications to get them from the \
+         browser too."
+    };
+    let muted = ui::muted(ui);
+    ui.label(RichText::new(note).size(11.5).color(muted));
+    if ui::can_notify()
+        && !ui::notifications_allowed()
+        && ui.button("Allow notifications").clicked()
+    {
+        ui::request_notifications();
+    }
+    ui.add_space(4.0);
 }
 
 fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
@@ -139,76 +165,111 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             );
         });
 
-        // --- settings (spec 3.2, 3.6) ---
-        ui.add_space(8.0);
-        ui::card(ui, None, |ui| {
-            ui.label(RichText::new("Settings").size(17.0).strong());
-            ui.add_space(6.0);
+        // --- settings, grouped as in the reference design ---
+        ui::settings_group(ui, "Learning", |ui| {
+            let frontier = ctx.progress.assumed_below;
+            let level = if ctx.progress.placement_done {
+                format!("#{}", ui::thousands(frontier))
+            } else {
+                "Not taken".to_owned()
+            };
+            // Spec 2.2 is emphatic that self-assessment runs high, so there is
+            // no "pick your level" here — the test is the way in.
+            if ui::value_row(ui, ui::Icon::Letters, "Placement test", &level) {
+                state.test = Some(Placement::new(ctx.dict));
+                state.picked = None;
+            }
 
-            ui.label(RichText::new("Theme").size(13.0));
-            ui.horizontal(|ui| {
-                for theme in [Theme::Light, Theme::Dark] {
-                    let on = ctx.progress.theme == theme;
-                    if ui.selectable_label(on, theme.label()).clicked() {
-                        ctx.progress.theme = theme;
-                    }
-                }
-            });
+            let accent = ctx.progress.accent;
+            let labels: Vec<&str> = Accent::ALL.iter().map(|a| a.label()).collect();
+            let at = Accent::ALL.iter().position(|a| *a == accent).unwrap_or(1);
+            if let Some(i) = ui::choice_row(ui, ui::Icon::Speaker, "Accent", &labels, at, false) {
+                ctx.progress.accent = Accent::ALL[i];
+            }
 
-            ui.add_space(8.0);
-            // Spec 3.6: "Nhắc ôn qua thông báo đẩy".
-            ui.label(RichText::new("Study reminders").size(13.0));
-            ui.horizontal_wrapped(|ui| {
-                for rate in Reminders::ALL {
-                    let on = ctx.progress.reminders == rate;
-                    if ui.selectable_label(on, rate.label()).clicked() {
-                        ctx.progress.reminders = rate;
-                        // Start the clock now, so switching it on does not fire
-                        // immediately off the back of an old timestamp.
-                        let now = crate::progress::now_secs();
-                        ctx.progress.mark_reminded(now);
-                    }
-                }
-            });
-            if ctx.progress.reminders != Reminders::Off {
-                let note = if !ui::can_notify() {
-                    "Shown inside the app. Notifications outside it need a \
-                     platform integration this build does not have."
-                } else if ui::notifications_allowed() {
-                    "Sent as a browser notification while WordTee is open, and \
-                     shown inside the app either way."
-                } else {
-                    "Shown inside the app. Allow notifications to get them \
-                     from the browser too."
-                };
-                ui.label(RichText::new(note).size(11.5).color(ui::muted(ui)));
-                if ui::can_notify()
-                    && !ui::notifications_allowed()
-                    && ui.button("Allow notifications").clicked()
-                {
-                    ui::request_notifications();
-                }
+            let goals = ["5", "10", "20"];
+            let at = goals
+                .iter()
+                .position(|g| g.parse() == Ok(ctx.progress.daily_goal))
+                .unwrap_or(1);
+            if let Some(i) = ui::choice_row(ui, ui::Icon::Target, "New words a day", &goals, at, false)
+            {
+                ctx.progress.daily_goal = goals[i].parse().unwrap_or(10);
+            }
+
+            let rates: Vec<&str> = Reminders::ALL.iter().map(|r| r.label()).collect();
+            let at = Reminders::ALL
+                .iter()
+                .position(|r| *r == ctx.progress.reminders)
+                .unwrap_or(0);
+            if let Some(i) = ui::choice_row(ui, ui::Icon::Bell, "Reminders", &rates, at, true) {
+                ctx.progress.reminders = Reminders::ALL[i];
+                let now = crate::progress::now_secs();
+                ctx.progress.mark_reminded(now);
+            }
+
+            let mut alerts = ctx.progress.streak_alerts;
+            if ui::switch_row(ui, ui::Icon::Star, "Streak alerts", &mut alerts) {
+                ctx.progress.streak_alerts = alerts;
+            }
+            reminder_note(ui, ctx);
+        });
+
+        ui::settings_group(ui, "Review cards", |ui| {
+            let mut examples = ctx.progress.show_examples;
+            if ui::switch_row(ui, ui::Icon::Study, "Word examples", &mut examples) {
+                ctx.progress.show_examples = examples;
+            }
+            let mut speak = ctx.progress.auto_pronounce;
+            if ui::switch_row(ui, ui::Icon::Speaker, "Pronounce on show", &mut speak) {
+                ctx.progress.auto_pronounce = speak;
+            }
+            let mut hard = ctx.progress.hard_word_alert;
+            if ui::switch_row(ui, ui::Icon::Bell, "Hard word alert", &mut hard) {
+                ctx.progress.hard_word_alert = hard;
+            }
+
+            let cases: Vec<&str> = Casing::ALL.iter().map(|c| c.label()).collect();
+            let at = Casing::ALL
+                .iter()
+                .position(|c| *c == ctx.progress.casing)
+                .unwrap_or(0);
+            if let Some(i) = ui::choice_row(ui, ui::Icon::Letters, "Casing", &cases, at, false) {
+                ctx.progress.casing = Casing::ALL[i];
+            }
+
+            ui.add_space(2.0);
+            let muted = ui::muted(ui);
+            ui.label(RichText::new("CHALLENGE TYPES").size(11.0).color(muted));
+            ui.add_space(2.0);
+            // Spec 3.3's three levels. The last one on cannot be cleared, or a
+            // session would have nothing to ask.
+            let mut challenges = ctx.progress.challenges;
+            let only_one = challenges.count() == 1;
+            for (label, flag) in [
+                ("Recognise \u{2014} pick the meaning", &mut challenges.recognise),
+                ("Recall \u{2014} fill the gap", &mut challenges.recall),
+                ("Produce \u{2014} spell it out", &mut challenges.produce),
+            ] {
+                let locked = only_one && *flag;
+                ui.add_enabled_ui(!locked, |ui| {
+                    ui.checkbox(flag, RichText::new(label).size(13.0));
+                });
+            }
+            if challenges.count() > 0 {
+                ctx.progress.challenges = challenges;
+            }
+            if only_one {
                 ui.label(
-                    RichText::new("Only when something is actually waiting.")
-                        .size(11.5)
-                        .color(ui::muted(ui)),
+                    RichText::new("At least one has to stay on.")
+                        .size(11.0)
+                        .color(muted),
                 );
             }
 
-            ui.add_space(8.0);
-            ui.label(RichText::new("New words per day").size(13.0));
-            ui.horizontal(|ui| {
-                for goal in [5u32, 10, 20] {
-                    let on = ctx.progress.daily_goal == goal;
-                    if ui.selectable_label(on, format!("{goal}")).clicked() {
-                        ctx.progress.daily_goal = goal;
-                    }
-                }
-            });
-
-            ui.add_space(8.0);
+            ui.add_space(6.0);
             // Spec 3.2: desired retention, adjustable between 0,8 and 0,95.
-            ui.label(RichText::new("Target retention").size(13.0));
+            ui.label(RichText::new("Target retention").size(13.5).strong());
             ui.add(
                 egui::Slider::new(&mut ctx.progress.retention, 0.8..=0.95)
                     .fixed_decimals(2)
@@ -217,13 +278,38 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui.label(
                 RichText::new("Higher means firmer recall, but more reviews to sit through.")
                     .size(11.5)
-                    .color(ui::muted(ui)),
+                    .color(muted),
             );
+        });
+
+        ui::settings_group(ui, "General", |ui| {
+            let dark = ctx.progress.theme == Theme::Dark;
+            ui.horizontal(|ui| {
+                let color = ui::accent(ui);
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+                let behind = ui.visuals().faint_bg_color;
+                ui::paint_icon(
+                    ui.painter(),
+                    rect,
+                    if dark { ui::Icon::Moon } else { ui::Icon::Sun },
+                    color,
+                    behind,
+                );
+                ui.add_space(4.0);
+                ui.label(RichText::new("Theme").size(14.0).strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if let Some(i) = ui::segmented(ui, &["Light", "Dark"], usize::from(dark), false)
+                    {
+                        ctx.progress.theme = if i == 1 { Theme::Dark } else { Theme::Light };
+                    }
+                });
+            });
+            ui.add_space(6.0);
 
             // Spec 2.3, rule 3: the Skip Band.
             if ctx.progress.placement_done {
-                ui.add_space(8.0);
-                ui.label(RichText::new("Skip a rank band").size(13.0));
+                ui.label(RichText::new("Skip a rank band").size(13.5).strong());
                 ui.horizontal_wrapped(|ui| {
                     for jump in [1_000u32, 3_000] {
                         if ui.button(format!("+{}", ui::thousands(jump))).clicked() {

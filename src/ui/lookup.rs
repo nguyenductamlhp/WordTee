@@ -314,15 +314,17 @@ fn word_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Word
         action_bar(ui, ctx, state, &sense);
     }
 
+    let voice = ctx.progress.accent;
+    let headword = ctx.progress.casing.apply(word.text);
     egui::ScrollArea::vertical().show(ui, |ui| {
         // --- the hero card: picture, word, sound, phonetics ---
         ui::card(ui, None, |ui| {
             ui::illustration_slot(ui);
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new(word.text).size(30.0).strong());
+                ui.label(RichText::new(headword).size(30.0).strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui::speak_buttons(ui, word.text);
+                    ui::speak_buttons(ui, word.text, voice);
                 });
             });
             if !word.ipa.is_empty() {
@@ -335,11 +337,11 @@ fn word_page(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut LookupState, id: Word
                 ui.add_space(6.0);
                 let accent = ui::accent(ui);
                 ui.label(RichText::new(sense.def).size(18.0).strong().color(accent));
-                if !sense.example.is_empty() {
+                if !sense.example.is_empty() && ctx.progress.show_examples {
                     ui.add_space(4.0);
                     ui.horizontal_wrapped(|ui| {
                         ui.label(RichText::new(sense.example).size(14.5));
-                        ui::speak_buttons(ui, sense.example);
+                        ui::speak_buttons(ui, sense.example, voice);
                     });
                     // Spec 1.4: remember we showed it, so no test re-uses it.
                     ctx.shown.mark(sense.id);

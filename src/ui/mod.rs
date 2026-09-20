@@ -9,7 +9,7 @@ pub mod study;
 use eframe::egui::{self, Color32, RichText};
 
 use crate::dict::{Band, Pos};
-use crate::progress::State;
+use crate::progress::{Accent, State};
 
 // ## Palette
 //
@@ -325,6 +325,12 @@ fn hatch(painter: &egui::Painter, rect: egui::Rect) {
 pub enum Icon {
     Home,
     Search,
+    Bell,
+    Star,
+    Target,
+    Sun,
+    Moon,
+    Letters,
     Study,
     Map,
     Person,
@@ -429,6 +435,75 @@ pub fn paint_icon(
                 }
             }
         }
+        Icon::Bell => {
+            // A bell: the dome, its lip, and the clapper below.
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    at(0.18, 0.68),
+                    at(0.30, 0.34),
+                    at(0.70, 0.34),
+                    at(0.82, 0.68),
+                ],
+                color,
+                egui::Stroke::NONE,
+            ));
+            painter.rect_filled(
+                egui::Rect::from_min_max(at(0.10, 0.68), at(0.90, 0.78)),
+                unit * 0.05,
+                color,
+            );
+            painter.circle_filled(at(0.5, 0.24), unit * 0.09, color);
+            painter.circle_filled(at(0.5, 0.88), unit * 0.09, color);
+        }
+        Icon::Star => {
+            let mut points = Vec::with_capacity(10);
+            for i in 0..10 {
+                let angle = (-90.0 + i as f32 * 36.0f32).to_radians();
+                let radius = if i % 2 == 0 { 0.46 } else { 0.20 };
+                points.push(at(0.5 + angle.cos() * radius, 0.5 + angle.sin() * radius));
+            }
+            // A star is concave, so it is drawn as a closed path rather than a
+            // convex polygon.
+            points.push(points[0]);
+            painter.add(egui::Shape::line(
+                points,
+                egui::Stroke::new((unit * 0.13).max(1.6), color),
+            ));
+        }
+        Icon::Target => {
+            painter.circle_stroke(at(0.5, 0.5), unit * 0.40, line);
+            painter.circle_stroke(at(0.5, 0.5), unit * 0.20, line);
+            painter.circle_filled(at(0.5, 0.5), unit * 0.08, color);
+        }
+        Icon::Sun => {
+            painter.circle_filled(at(0.5, 0.5), unit * 0.22, color);
+            for i in 0..8 {
+                let angle = (i as f32 * 45.0f32).to_radians();
+                let (cos, sin) = (angle.cos(), angle.sin());
+                painter.line_segment(
+                    [
+                        at(0.5 + cos * 0.33, 0.5 + sin * 0.33),
+                        at(0.5 + cos * 0.46, 0.5 + sin * 0.46),
+                    ],
+                    line,
+                );
+            }
+        }
+        Icon::Moon => {
+            // A crescent: a disc with a second disc taken out of it.
+            painter.circle_filled(at(0.54, 0.5), unit * 0.40, color);
+            painter.circle_filled(at(0.74, 0.38), unit * 0.36, background);
+        }
+        Icon::Letters => {
+            // "Aa", drawn: a capital A beside a lowercase one.
+            painter.add(egui::Shape::line(
+                vec![at(0.04, 0.80), at(0.24, 0.20), at(0.44, 0.80)],
+                line,
+            ));
+            painter.line_segment([at(0.12, 0.60), at(0.36, 0.60)], line);
+            painter.circle_stroke(at(0.72, 0.62), unit * 0.18, line);
+            painter.line_segment([at(0.90, 0.44), at(0.90, 0.80)], line);
+        }
         Icon::Speaker | Icon::SpeakerSlow => {
             // A speaker: the neck, then the cone.
             painter.add(egui::Shape::convex_polygon(
@@ -488,6 +563,157 @@ fn arc(
         })
         .collect();
     painter.add(egui::Shape::line(points, stroke));
+}
+
+// -------------------------------------------------------------------------
+// settings
+// -------------------------------------------------------------------------
+
+/// A titled group of settings rows, as a card.
+pub fn settings_group<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    body: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    ui.add_space(8.0);
+    let inner = card(ui, None, |ui| {
+        let teal = good(ui);
+        ui.label(RichText::new(title).size(16.0).strong().color(teal));
+        ui.add_space(4.0);
+        body(ui)
+    });
+    inner.inner
+}
+
+/// The left half of a settings row: icon, then label.
+fn row_label(ui: &mut egui::Ui, icon: Icon, label: &str) {
+    let color = accent(ui);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+    let behind = ui.visuals().faint_bg_color;
+    paint_icon(ui.painter(), rect, icon, color, behind);
+    ui.add_space(4.0);
+    ui.label(RichText::new(label).size(14.0).strong());
+}
+
+/// A segmented control: the pill of two or three choices the reference uses.
+///
+/// `off_style` paints a selected first option in the muted colour rather than
+/// the teal, which is how the reference distinguishes "switched off" from
+/// "switched on" without changing the shape.
+pub fn segmented(
+    ui: &mut egui::Ui,
+    options: &[&str],
+    selected: usize,
+    off_style: bool,
+) -> Option<usize> {
+    let mut picked = None;
+    let height = 26.0;
+    let width: f32 = options.iter().map(|o| 30.0 + o.len() as f32 * 6.0).sum();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+
+    let on = if off_style && selected == 0 {
+        muted(ui)
+    } else {
+        good(ui)
+    };
+    let idle = toward_background(ui, muted(ui), 0.18);
+    let each = rect.width() / options.len() as f32;
+    for (i, option) in options.iter().enumerate() {
+        let cell = egui::Rect::from_min_size(
+            rect.min + egui::vec2(each * i as f32, 0.0),
+            egui::vec2(each, height),
+        );
+        let chosen = i == selected;
+        let response = ui.interact(
+            cell,
+            ui.id().with((options.len(), i, *option)),
+            egui::Sense::click(),
+        );
+        ui.painter().rect_filled(
+            cell,
+            if i == 0 || i + 1 == options.len() {
+                6.0
+            } else {
+                0.0
+            },
+            if chosen { on } else { idle },
+        );
+        ui.painter().text(
+            cell.center(),
+            egui::Align2::CENTER_CENTER,
+            option,
+            egui::FontId::proportional(12.5),
+            if chosen {
+                readable_on(on)
+            } else {
+                ui.visuals().text_color()
+            },
+        );
+        if response.clicked() {
+            picked = Some(i);
+        }
+    }
+    picked
+}
+
+/// A row whose control is a segmented pill.
+pub fn choice_row(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    label: &str,
+    options: &[&str],
+    selected: usize,
+    off_style: bool,
+) -> Option<usize> {
+    let mut picked = None;
+    ui.horizontal(|ui| {
+        row_label(ui, icon, label);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            picked = segmented(ui, options, selected, off_style);
+        });
+    });
+    ui.add_space(6.0);
+    picked
+}
+
+/// A row whose control is an on/off pill.
+pub fn switch_row(ui: &mut egui::Ui, icon: Icon, label: &str, on: &mut bool) -> bool {
+    let picked = choice_row(ui, icon, label, &["Off", "On"], usize::from(*on), true);
+    match picked {
+        Some(i) => {
+            let changed = *on != (i == 1);
+            *on = i == 1;
+            changed
+        }
+        None => false,
+    }
+}
+
+/// A row that shows a value and opens something when tapped.
+pub fn value_row(ui: &mut egui::Ui, icon: Icon, label: &str, value: &str) -> bool {
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        row_label(ui, icon, label);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let muted = muted(ui);
+            ui.label(RichText::new("\u{203A}").size(17.0).color(muted));
+            ui.label(RichText::new(value).size(13.5).color(muted));
+        });
+    });
+    // The whole row is the target, not just the chevron.
+    let rect = ui.min_rect();
+    let row = egui::Rect::from_min_max(
+        egui::pos2(rect.left(), ui.cursor().top() - 26.0),
+        egui::pos2(rect.right(), ui.cursor().top()),
+    );
+    if ui
+        .interact(row, ui.id().with(("row", label)), egui::Sense::click())
+        .clicked()
+    {
+        clicked = true;
+    }
+    ui.add_space(6.0);
+    clicked
 }
 
 /// Where a word's illustration goes (spec 1.3, media layer 2).
@@ -667,7 +893,7 @@ pub fn can_speak() -> bool {
 
 /// Speaks `text` at `rate` (spec 1.3 offers 0,75× and 1,0×).
 #[cfg(target_arch = "wasm32")]
-pub fn speak(text: &str, rate: f32) {
+pub fn speak(text: &str, rate: f32, accent: Accent) {
     use eframe::web_sys;
 
     let Some(synth) = web_sys::window().and_then(|w| w.speech_synthesis().ok()) else {
@@ -675,14 +901,14 @@ pub fn speak(text: &str, rate: f32) {
     };
     synth.cancel();
     if let Ok(utterance) = web_sys::SpeechSynthesisUtterance::new_with_text(text) {
-        utterance.set_lang("en-US");
+        utterance.set_lang(accent.tag());
         utterance.set_rate(rate);
         synth.speak(&utterance);
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn speak(_text: &str, _rate: f32) {}
+pub fn speak(_text: &str, _rate: f32, _accent: Accent) {}
 
 // -------------------------------------------------------------------------
 // study reminders (spec 3.6)
@@ -734,17 +960,17 @@ pub fn notify(title: &str, body: &str) {
 pub fn notify(_title: &str, _body: &str) {}
 
 /// The two speed buttons of spec 1.3, drawn only where they would work.
-pub fn speak_buttons(ui: &mut egui::Ui, text: &str) {
+pub fn speak_buttons(ui: &mut egui::Ui, text: &str, accent: Accent) {
     if !can_speak() {
         return;
     }
     // Painted rather than 🔊/🐢: those live only in the fallback emoji fonts,
     // so they arrive in a different typeface — or, for the turtle, not at all.
     if icon_button(ui, Icon::Speaker, "Play").clicked() {
-        speak(text, 1.0);
+        speak(text, 1.0, accent);
     }
     if icon_button(ui, Icon::SpeakerSlow, "Play slowly (0.75×)").clicked() {
-        speak(text, 0.75);
+        speak(text, 0.75, accent);
     }
 }
 

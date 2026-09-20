@@ -149,13 +149,31 @@ there to catch.
 Settings** and saved with the rest of your progress. Colours are chosen per
 theme rather than shared: a purple legible on near-black washes out on white.
 
-**Reminders (spec 3.6).** Off, every 4h, every 8h or once a day, under the same
-settings. An interval rather than a clock time, because `SystemTime` is UTC on
-every platform here and the app has no reliable local timezone — "every four
-hours" is a promise it can keep and "every day at 8pm" is not. Two guards make
-it bearable: nothing is sent when the queue is empty, and finishing a session
-buys a full interval of quiet. The browser can raise a real notification while
-the page is open; everywhere else it is an in-app message (see the gaps table).
+**Reminders (spec 3.6).** Off, every 4h, every 8h or once a day. An interval
+rather than a clock time, because `SystemTime` is UTC on every platform here and
+the app has no reliable local timezone — "every four hours" is a promise it can
+keep and "every day at 8pm" is not. Two guards make it bearable: nothing is sent
+when the queue is empty, and finishing a session buys a full interval of quiet.
+The browser can raise a real notification while the page is open; everywhere else
+it is an in-app message (see the gaps table).
+
+**Settings.** Grouped as in the reference design, and every row does something:
+
+| | |
+| --- | --- |
+| Placement test | opens the CAT test; shows your frontier |
+| Accent | UK or US, which picks the speech voice |
+| New words a day, reminders, target retention | the spec's own knobs |
+| Streak alerts, hard-word alert | gate the two nudges |
+| Word examples, casing, pronounce on show | change what a card shows |
+| Challenge types | which of spec 3.3's three levels you will be asked |
+
+Challenge types is the one with teeth: switching off *produce* means a card
+that has earned level 3 is asked at level 2 instead, and the last one on cannot
+be cleared, or a session would have nothing to ask. Rows the reference has that
+nothing here backs — translate the interface, monthly email report, image style,
+vibration, video backgrounds, shake-to-report — are left out rather than shipped
+as switches that do nothing.
 
 ## The dictionary
 
