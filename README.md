@@ -311,6 +311,7 @@ the better shape — ask and I can add that.
 | --- | --- |
 | `assets/wordtee.dict` | The dictionary, 19 MB, `include_bytes!`d into the binary |
 | `assets/fonts/` | Noto Sans, the one font that covers both Vietnamese and IPA |
+| `assets/logo.svg` | The logo; the launcher PNGs, `assets/icon.png` (desktop window) and the favicon are drawn from it |
 | `scripts/build-dict.py` | Builds that file from the two upstream sources |
 | `src/dict.rs` | Zero-copy reader for the pack |
 | `src/search.rs` | The four-tier lookup pipeline (spec 1.1) |

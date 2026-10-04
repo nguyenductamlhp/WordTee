@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
+  <!-- WordTee: a W whose middle peak is a tee, with the ball sitting on it.
+       Drawn on Android's 108-unit adaptive-icon canvas; the mark alone, at
+       scale 1, is android/res/drawable/ic_launcher_foreground.xml. Here it is
+       enlarged on a tile, as used for the legacy launcher PNGs, the desktop
+       window icon (assets/icon.png) and the web favicon. -->
+  <rect width="108" height="108" rx="24" fill="#0B6FC2" />
+  <g transform="matrix(1.25 0 0 1.25 -13.5 -13.5)">
+    <path d="M30,43 L41,75 L54,51 L67,75 L78,43" fill="none" stroke="#FFFFFF" stroke-width="9"
+      stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="54" cy="36" r="6.5" fill="#F5B341" />
+  </g>
+</svg>

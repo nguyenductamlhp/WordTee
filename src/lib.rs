@@ -35,11 +35,33 @@ pub use web::start as start_web;
 pub fn native_options() -> eframe::NativeOptions {
     use eframe::egui;
 
+    let viewport = egui::ViewportBuilder::default()
+        .with_title(APP_NAME)
+        .with_inner_size([420.0, 720.0])
+        .with_min_inner_size([260.0, 320.0]);
+    // Android takes its launcher icon from `android/res/` instead.
+    #[cfg(not(target_os = "android"))]
+    let viewport = viewport.with_icon(window_icon());
+
     eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title(APP_NAME)
-            .with_inner_size([420.0, 720.0])
-            .with_min_inner_size([260.0, 320.0]),
+        viewport,
         ..Default::default()
+    }
+}
+
+/// The logo, for the window's title bar and the taskbar. Rendered from
+/// `assets/logo.svg`; without it, eframe shows its own egui logo.
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+fn window_icon() -> eframe::egui::IconData {
+    let png = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/icon.png"));
+    eframe::icon_data::from_png_bytes(png).expect("assets/icon.png is a valid PNG")
+}
+
+#[cfg(all(test, not(target_arch = "wasm32"), not(target_os = "android")))]
+mod tests {
+    #[test]
+    fn window_icon_decodes() {
+        let icon = super::window_icon();
+        assert_eq!((icon.width, icon.height), (256, 256));
     }
 }
