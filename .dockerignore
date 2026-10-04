@@ -11,3 +11,8 @@ android/keystore/
 *.keystore
 
 README.md
+
+# Coolify writes the deployment's environment, secrets included, into the
+# build directory. Nothing copies it today; this keeps it that way.
+.env
+.env.*

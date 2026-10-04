@@ -14,9 +14,16 @@ JDK_DIR="${JDK_DIR:-$HOME/Android/jdk}"
 
 # Pin the SDK pieces so a build is reproducible. Bump them deliberately.
 CMDLINE_TOOLS_REV="${CMDLINE_TOOLS_REV:-13114758}"
+# sha256 of commandlinetools-linux-${CMDLINE_TOOLS_REV}_latest.zip; bump it with
+# the revision. Google lists it on https://developer.android.com/studio.
+CMDLINE_TOOLS_SHA256="${CMDLINE_TOOLS_SHA256:-7ec965280a073311c339e571cd5de778b9975026cfcbe79f2b1cdcb1e15317ee}"
 PLATFORM_VERSION="${PLATFORM_VERSION:-35}"
 BUILD_TOOLS_VERSION="${BUILD_TOOLS_VERSION:-35.0.1}"
 NDK_VERSION="${NDK_VERSION:-27.3.13750724}"
+
+# Installed from crates.io with `--locked`, so its dependencies are pinned by
+# its own Cargo.lock as well.
+CARGO_APK2_VERSION="${CARGO_APK2_VERSION:-1.4.2}"
 
 RUST_TARGETS=(aarch64-linux-android armv7-linux-androideabi x86_64-linux-android)
 
@@ -47,6 +54,7 @@ if [ ! -x "$SDKMANAGER" ]; then
     trap 'rm -rf "$tmp"' EXIT
     curl -fsSL -o "$tmp/tools.zip" \
         "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_REV}_latest.zip"
+    echo "$CMDLINE_TOOLS_SHA256  $tmp/tools.zip" | sha256sum -c -
     unzip -q "$tmp/tools.zip" -d "$tmp"
     mkdir -p "$ANDROID_HOME/cmdline-tools"
     # The zip unpacks to `cmdline-tools/`; sdkmanager insists on living in a
@@ -76,8 +84,8 @@ rustup target add "${RUST_TARGETS[@]}"
 if command -v cargo-apk2 >/dev/null 2>&1; then
     step "cargo-apk2 already installed ($(cargo apk2 --version))"
 else
-    step "Installing cargo-apk2"
-    cargo install cargo-apk2 --locked
+    step "Installing cargo-apk2 $CARGO_APK2_VERSION"
+    cargo install cargo-apk2 --version "$CARGO_APK2_VERSION" --locked
 fi
 
 cat <<MSG

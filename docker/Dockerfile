@@ -1,14 +1,29 @@
 # Builds the Android APK and the WebAssembly demo, then serves both from nginx.
 #
 #   docker compose build                         builds everything
-#   docker run --rm -p 8080:80 wordtee-web        →  http://localhost:8080
+#   docker run --rm -p 8080:80 \
+#       -e BASIC_AUTH_USER=me -e BASIC_AUTH_PASSWORD=… \
+#       wordtee-web                              →  http://localhost:8080
 #
 # The Android SDK/NDK and the Rust toolchains live only in the build stages. The
 # image that actually ships is nginx plus static files, so it stays small.
+#
+# The build runs on the deployment server, so every tool it downloads is pinned
+# and checked: by checksum here, or by Cargo.lock for anything from crates.io.
 
 ARG RUST_VERSION=1.98.1
-ARG TRUNK_VERSION=0.21.14
 ARG NGINX_VERSION=1.31
+
+# Bump each version together with its checksum: the release publishes it next
+# to the archive, as `<archive>.sha256`.
+ARG TRUNK_VERSION=0.21.14
+ARG TRUNK_SHA256=f2b4680cd239693a646a2795e4633c625328d7b2a044fbe749fa3a2fe9e7036b
+ARG BINARYEN_VERSION=123
+ARG BINARYEN_SHA256=e959f2170af4c20c552e9de3a0253704d6a9d2766e8fdb88e4d6ac4bae9388fe
+
+# Must equal the `wasm-bindgen` version in Cargo.lock. If they drift apart the
+# build stops, naming both versions.
+ARG WASM_BINDGEN_VERSION=0.2.128
 
 # ---------------------------------------------------------------------------
 # Stage 1 — the APK.
@@ -56,34 +71,57 @@ RUN ./scripts/build-apk.sh --release --abi "${APK_ABI:-arm64}" --out /out \
 # ---------------------------------------------------------------------------
 # Stage 2 — the WebAssembly build.
 #
-# `trunk` downloads matching wasm-bindgen and wasm-opt binaries itself, so this
-# stage needs network access at build time.
+# Left to itself, `trunk` downloads wasm-bindgen and wasm-opt without checking
+# them. Instead both are installed here, and `--offline` makes trunk use them
+# or fail, never fetch its own.
 # ---------------------------------------------------------------------------
 FROM --platform=linux/amd64 rust:${RUST_VERSION}-bookworm AS web-builder
 
 ARG TRUNK_VERSION
+ARG TRUNK_SHA256
+ARG BINARYEN_VERSION
+ARG BINARYEN_SHA256
+ARG WASM_BINDGEN_VERSION
 
 WORKDIR /src
 
 RUN rustup target add wasm32-unknown-unknown \
- && curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
-      | tar xz -C /usr/local/bin trunk \
- && trunk --version
+ && curl -fsSL -o /tmp/trunk.tar.gz \
+      "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+ && echo "${TRUNK_SHA256}  /tmp/trunk.tar.gz" | sha256sum -c - \
+ && tar xzf /tmp/trunk.tar.gz -C /usr/local/bin trunk \
+ && curl -fsSL -o /tmp/binaryen.tar.gz \
+      "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" \
+ && echo "${BINARYEN_SHA256}  /tmp/binaryen.tar.gz" | sha256sum -c - \
+ && tar xzf /tmp/binaryen.tar.gz -C /usr/local/bin --strip-components=2 \
+      "binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt" \
+ && rm /tmp/trunk.tar.gz /tmp/binaryen.tar.gz \
+ && cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked \
+ && trunk --version && wasm-opt --version && wasm-bindgen --version
 
 COPY Cargo.toml Cargo.lock Trunk.toml ./
 COPY src/ ./src/
 COPY web/ ./web/
 COPY assets/ ./assets/
 
-RUN trunk build --release
+# `--offline` reaches cargo too, so the crates are fetched first, checked
+# against Cargo.lock.
+RUN cargo fetch --locked \
+ && trunk build --release --offline
 
 # ---------------------------------------------------------------------------
 # Stage 3 — what gets deployed. `/download/` holds the APK and the JSON the
 # page reads to describe it.
+#
+# The unprivileged nginx image runs as uid 101 and keeps its pid and temp files
+# in /tmp, so the container needs neither root nor a writable filesystem
+# (docker-compose.yml takes both away).
 # ---------------------------------------------------------------------------
-FROM nginx:${NGINX_VERSION}-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:${NGINX_VERSION}-alpine AS runtime
 
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker/security-headers.conf /etc/nginx/snippets/security-headers.conf
+COPY --chmod=755 docker/40-basic-auth.sh /docker-entrypoint.d/40-basic-auth.sh
 COPY --from=web-builder /src/dist/ /usr/share/nginx/html/
 COPY --from=apk-builder /out/ /usr/share/nginx/html/download/
 

@@ -11,15 +11,21 @@
 # Coolify clones the repo, runs the build below on the server, and routes its
 # own proxy (Traefik or Caddy) to the container.
 #
+# The site asks for a login: set BASIC_AUTH_USER and BASIC_AUTH_PASSWORD under
+# Coolify's Environment Variables. Without both the container will not start.
+#
 # Run it locally
 # --------------
 #   docker compose build
-#   docker run --rm -p 8080:80 wordtee-web          # http://localhost:8080
+#   docker run --rm -p 8080:80 \
+#       -e BASIC_AUTH_USER=me -e BASIC_AUTH_PASSWORD=… \
+#       wordtee-web                              # http://localhost:8080
 #
-# and to pull the APK out of the image:
+# and to pull the APK out of the image (as your own user, since the image's
+# does not own ./out):
 #
-#   docker run --rm -v "$PWD/out:/out" wordtee-web \
-#       cp /usr/share/nginx/html/download/wordtee.apk /out/
+#   mkdir -p out && docker run --rm --user "$(id -u)" -v "$PWD/out:/out" \
+#       wordtee-web cp /usr/share/nginx/html/download/wordtee.apk /out/
 #
 # There is deliberately no `ports:` below. Coolify's proxy reaches the container
 # over the Docker network, so publishing a host port would bypass it — and
@@ -40,6 +46,10 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       target: runtime
+      # Fetch the base images afresh, so a redeploy also picks up their
+      # security fixes. When the Rust image has changed, that means rebuilding
+      # the SDK layer too, as on a first deploy.
+      pull: true
       args:
         # arm64 | arm | x86_64 | all
         #
@@ -47,22 +57,24 @@ services:
         # "Build Variables" do not reach Compose builds.
         APK_ABI: ${APK_ABI:-arm64}
 
-    # Deliberately no `environment:` block. Set the site's address in Coolify's
-    # Domains field for this service instead, as `https://apk.example.com:80` —
-    # the `:80` suffix names the *container* port, the public site still answers
-    # on 80/443.
+    # The login for the whole site; docker/40-basic-auth.sh turns it into
+    # nginx's htpasswd file at startup.
+    #
+    # No `SERVICE_URL_*` here: set the site's address in Coolify's Domains field
+    # for this service instead, as `https://apk.example.com:80` — the `:80`
+    # suffix names the *container* port, the public site still answers on
+    # 80/443.
     #
     # Coolify can also generate a domain from your wildcard domain, via a
-    # `SERVICE_URL_WEB_80` variable. If you want that, write it with a trailing
-    # equals sign:
-    #
-    #     environment:
-    #       - SERVICE_URL_WEB_80=
-    #
-    # The bare form the docs show fails on Git-based Compose apps: Coolify turns
-    # the list into a map by splitting each entry on `=`, and an entry with no
-    # `=` keeps its list index, emitting `0: SERVICE_URL_WEB_80`, which Compose
-    # rejects as a non-string key (coollabsio/coolify#5064).
+    # `SERVICE_URL_WEB_80` variable. If you want that, add it with a trailing
+    # equals sign, `- SERVICE_URL_WEB_80=`. The bare form the docs show fails on
+    # Git-based Compose apps: Coolify turns the list into a map by splitting
+    # each entry on `=`, and an entry with no `=` keeps its list index, emitting
+    # `0: SERVICE_URL_WEB_80`, which Compose rejects as a non-string key
+    # (coollabsio/coolify#5064).
+    environment:
+      - BASIC_AUTH_USER=${BASIC_AUTH_USER}
+      - BASIC_AUTH_PASSWORD=${BASIC_AUTH_PASSWORD}
 
     # Reachable to the proxy on the internal network, not published on the host.
     expose:
@@ -70,9 +82,27 @@ services:
 
     restart: unless-stopped
 
+    # Should nginx ever be exploited, there is little left to take: the
+    # filesystem is read-only apart from /tmp, nginx runs as an ordinary user
+    # with no capabilities, and nothing in the container can gain any.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    # Lets that ordinary user listen on port 80. Docker has set this by default
+    # since 20.10; spelled out because the container does not start without it.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    mem_limit: 256m
+    pids_limit: 256
+
     healthcheck:
-      # If the APK metadata is being served, both build stages produced output.
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/download/build-info.json"]
+      # Unauthenticated, and answered only from inside the container. It
+      # serves the APK metadata, so passing means both build stages produced
+      # output.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
