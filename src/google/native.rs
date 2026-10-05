@@ -249,8 +249,17 @@ impl Flow {
     fn answer(&self, mut stream: TcpStream) -> Option<Result<String, Error>> {
         let _ = stream.set_nonblocking(false);
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+        let mut reader = BufReader::new(&stream);
         let mut line = String::new();
-        BufReader::new(&stream).read_line(&mut line).ok()?;
+        reader.read_line(&mut line).ok()?;
+        // Read the rest of the request head too, up to its blank line.
+        // Closing a socket with bytes still unread in it sends a reset, and
+        // the browser can show "connection reset" instead of the page.
+        let mut header = String::new();
+        while reader.read_line(&mut header).is_ok_and(|read| read > 2) {
+            header.clear();
+        }
+        drop(reader);
         let Some(redirect) = Redirect::parse(&line) else {
             respond(&mut stream, "404 Not Found", "Not found", "");
             return None;
