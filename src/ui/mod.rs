@@ -595,6 +595,11 @@ fn row_label(ui: &mut egui::Ui, icon: Icon, label: &str) {
     ui.label(RichText::new(label).size(14.0).strong());
 }
 
+/// How wide [`segmented`] draws these options.
+fn segmented_width(options: &[&str]) -> f32 {
+    options.iter().map(|o| 30.0 + o.len() as f32 * 6.0).sum()
+}
+
 /// A segmented control: the pill of two or three choices the reference uses.
 ///
 /// `off_style` paints a selected first option in the muted colour rather than
@@ -608,8 +613,8 @@ pub fn segmented(
 ) -> Option<usize> {
     let mut picked = None;
     let height = 26.0;
-    let width: f32 = options.iter().map(|o| 30.0 + o.len() as f32 * 6.0).sum();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let width = segmented_width(options);
+    let (rect, pill) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
 
     let on = if off_style && selected == 0 {
         muted(ui)
@@ -624,11 +629,11 @@ pub fn segmented(
             egui::vec2(each, height),
         );
         let chosen = i == selected;
-        let response = ui.interact(
-            cell,
-            ui.id().with((options.len(), i, *option)),
-            egui::Sense::click(),
-        );
+        // Each cell's id comes from the pill's own, which egui numbers per
+        // widget like a button's. Not from `ui.id()`: sibling `Ui`s share
+        // that, so every Off/On row in Settings would have had the same cells,
+        // and a tap on one switch could flip the others.
+        let response = ui.interact(cell, pill.id.with(i), egui::Sense::click());
         ui.painter().rect_filled(
             cell,
             if i == 0 || i + 1 == options.len() {
@@ -666,12 +671,34 @@ pub fn choice_row(
     off_style: bool,
 ) -> Option<usize> {
     let mut picked = None;
-    ui.horizontal(|ui| {
-        row_label(ui, icon, label);
+    // Icon, gap, label, and room between label and pill.
+    let label_width = egui::WidgetText::from(RichText::new(label).size(14.0).strong())
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::TextStyle::Body,
+        )
+        .size()
+        .x;
+    let beside = 20.0 + 4.0 + label_width + 3.0 * ui.spacing().item_spacing.x;
+    let pill = |ui: &mut egui::Ui, picked: &mut Option<usize>| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            picked = segmented(ui, options, selected, off_style);
+            *picked = segmented(ui, options, selected, off_style);
         });
-    });
+    };
+    if beside + segmented_width(options) <= ui.available_width() {
+        ui.horizontal(|ui| {
+            row_label(ui, icon, label);
+            pill(ui, &mut picked);
+        });
+    } else {
+        // Too wide to share a line with its label — four reminder rates on a
+        // phone — so the pill goes underneath rather than over the label.
+        ui.horizontal(|ui| row_label(ui, icon, label));
+        ui.add_space(2.0);
+        ui.horizontal(|ui| pill(ui, &mut picked));
+    }
     ui.add_space(6.0);
     picked
 }
@@ -977,6 +1004,122 @@ pub fn speak_buttons(ui: &mut egui::Ui, text: &str, accent: Accent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every piece of text a frame painted, with where its middle is.
+    fn painted_text(output: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
+        fn walk(shape: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
+            match shape {
+                egui::Shape::Text(text) => {
+                    let rect = text.galley.rect.translate(text.pos.to_vec2());
+                    out.push((text.galley.text().to_owned(), rect));
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut out);
+        }
+        out
+    }
+
+    /// One frame of `body` on a screen `width` wide.
+    fn frame(
+        ctx: &egui::Context,
+        width: f32,
+        events: Vec<egui::Event>,
+        body: impl FnMut(&mut egui::Ui),
+    ) -> egui::FullOutput {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width, 800.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut body = body;
+        let mut output = ctx.run_ui(input, |ui| body(ui));
+        // Nothing renders here, so the font atlas has nowhere to go.
+        output.textures_delta.clear();
+        output
+    }
+
+    #[test]
+    fn a_switch_answers_only_for_itself() {
+        // The settings screen's shape: Off/On rows in sibling groups, which
+        // is exactly where the rows' cells used to share ids.
+        let ctx = egui::Context::default();
+        let mut on = [true; 4];
+        let draw = |ui: &mut egui::Ui, on: &mut [bool; 4]| {
+            settings_group(ui, "Learning", |ui| {
+                switch_row(ui, Icon::Star, "Streak alerts", &mut on[0]);
+                switch_row(ui, Icon::Study, "Word examples", &mut on[1]);
+            });
+            settings_group(ui, "Review cards", |ui| {
+                switch_row(ui, Icon::Speaker, "Pronounce on show", &mut on[2]);
+                switch_row(ui, Icon::Bell, "Hard word alert", &mut on[3]);
+            });
+        };
+        let output = frame(&ctx, 400.0, vec![], |ui| draw(ui, &mut on));
+        assert!(
+            !painted_text(&output)
+                .iter()
+                .any(|(t, _)| t.contains("use of")),
+            "egui reported a widget id clash"
+        );
+
+        // Tap "Off" on the third row only.
+        let mut offs: Vec<egui::Pos2> = painted_text(&output)
+            .into_iter()
+            .filter(|(t, _)| t == "Off")
+            .map(|(_, r)| r.center())
+            .collect();
+        offs.sort_by(|a, b| a.y.total_cmp(&b.y));
+        assert_eq!(offs.len(), 4);
+        let at = offs[2];
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        frame(
+            &ctx,
+            400.0,
+            vec![egui::Event::PointerMoved(at), button(true)],
+            |ui| draw(ui, &mut on),
+        );
+        frame(&ctx, 400.0, vec![button(false)], |ui| draw(ui, &mut on));
+        assert_eq!(on, [true, true, false, true]);
+    }
+
+    #[test]
+    fn a_wide_pill_goes_under_its_label_not_over_it() {
+        let rates = ["Off", "Every 4h", "Every 8h", "Once a day"];
+        let ctx = egui::Context::default();
+        let place = |width: f32| {
+            let output = frame(&ctx, width, vec![], |ui| {
+                settings_group(ui, "Learning", |ui| {
+                    choice_row(ui, Icon::Bell, "Reminders", &rates, 3, true);
+                });
+            });
+            let text = painted_text(&output);
+            let find = |what: &str| text.iter().find(|(t, _)| t == what).unwrap().1;
+            (find("Reminders"), find("Off"), find("Once a day"))
+        };
+
+        // Room enough: one line.
+        let (label, first, _) = place(800.0);
+        assert!((label.center().y - first.center().y).abs() < 4.0);
+        assert!(first.left() > label.right());
+
+        // A phone: the pill wraps below, clear of the label.
+        let (label, first, last) = place(320.0);
+        assert!(first.top() > label.bottom(), "{label:?} vs {first:?}");
+        assert!(last.right() <= 320.0, "the pill runs off the screen");
+    }
 
     #[test]
     fn thousands_are_grouped() {

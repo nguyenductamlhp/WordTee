@@ -513,6 +513,10 @@ mod tests {
         }
 
         fn frame(&mut self, events: Vec<Event>) {
+            self.frame_output(events).drop_without_applying_deltas();
+        }
+
+        fn frame_output(&mut self, events: Vec<Event>) -> egui::FullOutput {
             self.time += 1.0 / 60.0;
             let Self { ctx, app, time } = self;
             let input = egui::RawInput {
@@ -522,7 +526,27 @@ mod tests {
                 ..Default::default()
             };
             ctx.run_ui(input, |ui| app.show(ui))
-                .drop_without_applying_deltas();
+        }
+
+        /// The warnings egui paints over widgets that share an id, which is
+        /// when a tap on one can register on another. Debug builds only.
+        fn id_clashes(&mut self) -> Vec<String> {
+            fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
+                match shape {
+                    egui::Shape::Text(text) if text.galley.text().contains("use of") => {
+                        out.push(text.galley.text().to_owned());
+                    }
+                    egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+                    _ => {}
+                }
+            }
+            let output = self.frame_output(vec![]);
+            let mut out = Vec::new();
+            for clipped in &output.shapes {
+                walk(&clipped.shape, &mut out);
+            }
+            output.drop_without_applying_deltas();
+            out
         }
 
         /// A few frames, so anything animated or deferred settles.
@@ -979,6 +1003,17 @@ mod tests {
         let counts = h.app.progress.tally(h.app.dict.learn_span(1..1_001));
         assert_eq!(counts[State::AssumedKnown as usize], 1_000);
         h.on(Tab::Map);
+    }
+
+    #[test]
+    fn no_screen_has_widgets_sharing_an_id() {
+        let mut h = Harness::new();
+        h.app.progress.apply_placement(2_000, 8.0);
+        for tab in Tab::ALL {
+            h.on(tab);
+            let clashes = h.id_clashes();
+            assert!(clashes.is_empty(), "{tab:?}: {clashes:?}");
+        }
     }
 
     #[test]

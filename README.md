@@ -523,7 +523,7 @@ uses Android's built-in `NativeActivity`, which loads `libwordtee.so` and calls
 cargo run            # debug
 cargo run --release
 
-cargo test                              # 162 tests, no window, GPU or network needed
+cargo test                              # 165 tests, no window, GPU or network needed
 cargo run --release --example bench     # lookup latency vs. the spec's budget
 ```
 
