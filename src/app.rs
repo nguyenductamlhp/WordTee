@@ -494,6 +494,10 @@ impl WordTeeApp {
 impl eframe::App for WordTeeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.show(ui);
+        #[cfg(target_os = "android")]
+        if let Some(bars) = &self.system_bars {
+            bars.watch_keyboard(ui.ctx());
+        }
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
@@ -658,6 +662,33 @@ mod tests {
         };
         assert_eq!(panel("chrome").top(), 24.0);
         assert_eq!(panel("tabs").bottom(), SCREEN.y - 48.0);
+    }
+
+    #[test]
+    fn the_keyboard_lifts_the_screen_rather_than_covering_it() {
+        // Android 15 no longer resizes the window for the keyboard; it is
+        // reported like a navigation bar, only taller.
+        let mut h = Harness::new();
+        h.on(Tab::Lookup);
+        let keyboard = 330.0;
+        h.insets.0.bottom = keyboard;
+        h.settle();
+
+        let above = SCREEN.y - keyboard;
+        let tabs = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new("tabs"))
+            .expect("the tab bar is drawn")
+            .outer_rect;
+        assert_eq!(tabs.bottom(), above);
+        let search = h
+            .ctx
+            .memory(|m| m.focused())
+            .and_then(|id| h.ctx.read_response(id))
+            .expect("the search box has focus");
+        assert!(
+            search.rect.bottom() <= tabs.top(),
+            "the search box is at {:?}, the tab bar at {tabs:?}",
+            search.rect
+        );
     }
 
     #[test]
