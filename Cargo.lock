@@ -4244,6 +4244,7 @@ dependencies = [
  "env_logger",
  "form_urlencoded",
  "getrandom 0.3.4",
+ "jni",
  "js-sys",
  "log",
  "ron 0.11.0",

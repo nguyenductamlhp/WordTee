@@ -138,6 +138,9 @@ pub struct WordTeeApp {
     study: ui::study::StudyState,
     map: ui::map::MapState,
     profile: ui::profile::ProfileState,
+    /// Where Android's status and navigation bars cover the window.
+    #[cfg(target_os = "android")]
+    system_bars: Option<crate::android::SystemBars>,
 }
 
 impl Default for WordTeeApp {
@@ -159,6 +162,8 @@ impl Default for WordTeeApp {
             study: Default::default(),
             map: Default::default(),
             profile: Default::default(),
+            #[cfg(target_os = "android")]
+            system_bars: None,
         }
     }
 }
@@ -176,6 +181,13 @@ impl WordTeeApp {
         }
         app.google = Google::load(cc.storage);
         app
+    }
+
+    /// Keeps the UI out from under Android's status and navigation bars.
+    #[cfg(target_os = "android")]
+    pub(crate) fn with_system_bars(mut self, bars: crate::android::SystemBars) -> Self {
+        self.system_bars = Some(bars);
+        self
     }
 
     /// The app's look and feel. Separate from [`Self::new`] so tests can set it
@@ -351,6 +363,16 @@ impl WordTeeApp {
             });
         }
 
+        // Android lays the window out under its status and navigation bars.
+        // The page colour runs on under them, and the panels keep to the safe
+        // area, which is the whole window everywhere else.
+        let viewport = ui.ctx().viewport_rect();
+        let content = ui.ctx().content_rect();
+        ui.painter()
+            .rect_filled(viewport, 0, ui.visuals().panel_fill);
+        let mut safe = ui.new_child(egui::UiBuilder::new().max_rect(content));
+        let ui = &mut safe;
+
         let mut goto = None;
         let mut open_word = None;
 
@@ -478,6 +500,18 @@ impl eframe::App for WordTeeApp {
         eframe::set_value(storage, STORAGE_KEY, &self.progress);
         self.google.save(storage);
     }
+
+    /// egui-winit reports the safe area on iOS only, so on Android it comes
+    /// from here.
+    #[cfg(target_os = "android")]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if let Some(bars) = &mut self.system_bars {
+            // This frame's scale, as egui-winit measured the screen in, where
+            // `ctx.pixels_per_point()` is still the last frame's.
+            let native = raw_input.viewport().native_pixels_per_point.unwrap_or(1.0);
+            raw_input.safe_area_insets = bars.insets(native * ctx.zoom_factor());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -497,6 +531,8 @@ mod tests {
         ctx: egui::Context,
         app: WordTeeApp,
         time: f64,
+        /// What the system bars cover, as Android reports it.
+        insets: egui::SafeAreaInsets,
     }
 
     impl Harness {
@@ -507,6 +543,7 @@ mod tests {
                 ctx,
                 app: WordTeeApp::default(),
                 time: 0.0,
+                insets: Default::default(),
             };
             harness.frame(vec![]); // Warm-up pass, so widget rects exist.
             harness
@@ -518,9 +555,15 @@ mod tests {
 
         fn frame_output(&mut self, events: Vec<Event>) -> egui::FullOutput {
             self.time += 1.0 / 60.0;
-            let Self { ctx, app, time } = self;
+            let Self {
+                ctx,
+                app,
+                time,
+                insets,
+            } = self;
             let input = egui::RawInput {
                 screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)),
+                safe_area_insets: Some(*insets),
                 time: Some(*time),
                 events,
                 ..Default::default()
@@ -593,6 +636,28 @@ mod tests {
             count(sense.example);
         }
         seen
+    }
+
+    #[test]
+    fn nothing_hides_under_the_system_bars() {
+        // Android 15 lays the window out under the status and navigation
+        // bars, and its navigation buttons sat on top of the tab bar.
+        let mut h = Harness::new();
+        h.insets = egui::SafeAreaInsets(egui::epaint::MarginF32 {
+            left: 0.0,
+            right: 0.0,
+            top: 24.0,
+            bottom: 48.0,
+        });
+        h.settle();
+
+        let panel = |id: &str| {
+            egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new(id))
+                .unwrap_or_else(|| panic!("no {id} panel"))
+                .outer_rect
+        };
+        assert_eq!(panel("chrome").top(), 24.0);
+        assert_eq!(panel("tabs").bottom(), SCREEN.y - 48.0);
     }
 
     #[test]

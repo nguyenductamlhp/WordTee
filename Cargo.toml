@@ -93,6 +93,9 @@ eframe = { version = "0.36", default-features = false, features = [
 ] }
 android-activity = "0.6"
 android_logger = "0.15"
+# To ask the window where the system bars cover it. The version android-activity
+# itself uses, so the two share one `JavaVM` and Cargo builds jni once.
+jni = "0.22"
 
 [dev-dependencies]
 # eframe stores state as RON; the progress round-trip test checks that format.
