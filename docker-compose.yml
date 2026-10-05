@@ -56,6 +56,12 @@ services:
         # On Coolify set this under Environment Variables. Coolify's separate
         # "Build Variables" do not reach Compose builds.
         APK_ABI: ${APK_ABI:-arm64}
+        # Google sign-in for syncing progress, compiled into the APK and the
+        # web build; see "Sync with Google" in the README. Left empty, the
+        # app builds without it. Set these under Environment Variables too.
+        WORDTEE_GOOGLE_DESKTOP_CLIENT_ID: ${WORDTEE_GOOGLE_DESKTOP_CLIENT_ID:-}
+        WORDTEE_GOOGLE_DESKTOP_CLIENT_SECRET: ${WORDTEE_GOOGLE_DESKTOP_CLIENT_SECRET:-}
+        WORDTEE_GOOGLE_WEB_CLIENT_ID: ${WORDTEE_GOOGLE_WEB_CLIENT_ID:-}
 
     # The login for the whole site; docker/40-basic-auth.sh turns it into
     # nginx's htpasswd file at startup.

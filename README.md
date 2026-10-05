@@ -5,9 +5,11 @@ lookup into something you are learning. It implements the WordTee v2 spec
 (`WordTee.pdf`) — tiered search, sense-by-sense learning items, an adaptive
 placement test, FSRS review scheduling and a knowledge map.
 
-Everything is offline. The dictionary ships inside the binary, so there is no
-server, no account and no network call at any point. The same Rust code runs as
-a native desktop binary, as an Android APK, and as WebAssembly in a browser.
+Everything works offline. The dictionary ships inside the binary, and there is
+no server. The only network use is optional: signing in with Google to
+[sync progress](#sync-with-google) through your own Google Drive. The same Rust
+code runs as a native desktop binary, as an Android APK, and as WebAssembly in a
+browser.
 
 The interface is in English; the meanings are Vietnamese, which is what the
 dictionary holds. The bottom bar is four icons over captions — Study, Map,
@@ -143,6 +145,74 @@ Two things the build script does that are worth knowing:
   translations, and inverting those recovers 1.129 headwords — `why` → "vì sao",
   `city` → "thành phố". Only used where there is nothing else.
 
+## Sync with Google
+
+Signing in is optional, under **You → Sync**. With it, your progress follows you
+between phone, desktop and browser through your own Google Drive. There is still
+no server: the copy is one file, `progress.json`, in the Drive's *app data
+folder* — a hidden area only this app can see. The `drive.appdata` permission
+reaches nothing else in the Drive.
+
+Each device keeps its own progress and folds Drive's copy into it
+(`Progress::merge`), so studying offline on two devices loses nothing:
+
+- Every card carries the time it last changed, and the later copy wins.
+- An Undo, and **Erase progress**, leave a mark, so a copy made before them
+  cannot bring anything back.
+- Placement and settings go by which side changed them last, the streak by
+  which side studied last, and today's counters by the higher count, so a daily
+  limit used up on one device is used up on all.
+
+Sync runs at startup, after signing in, and every two minutes while there are
+changes Drive has not seen. **Sync now** runs it at once. Signing out keeps the
+progress on the device and the copy in Drive.
+
+| | Desktop, Android | Web |
+| --- | --- | --- |
+| Signing in | Opens the system browser, which Google sends back to a one-off server on `127.0.0.1` (OAuth for installed apps, with PKCE) | Google's own popup, from its script loaded by `web/index.html` |
+| Staying signed in | A refresh token, kept in the app's storage | An hour at a time: after that, **Sync now** asks Google again, which closes its popup by itself |
+| OAuth client type | Desktop app | Web application |
+
+On Android, the browser's last page has a **Back to WordTee** button. Google's
+own Android sign-in is not used: it needs Java and an OAuth client tied to the
+APK's signing key, and this app has neither (each Docker build signs with a
+fresh key).
+
+### Setting it up
+
+The client IDs are compiled in. Without them the app builds as before, and the
+Sync card says sign-in is not set up.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), in one project:
+   - **APIs & Services → Library**: enable the **Google Drive API**.
+   - **Google Auth Platform → Branding**: create the consent screen, audience
+     **External**. It starts in *Testing*, where only the test users listed
+     under **Audience** can sign in; **Publish app** opens it to everyone.
+     `drive.appdata` is a non-sensitive scope, so publishing needs no review
+     by Google.
+   - **Clients → Create client**, twice:
+     - type **Desktop app**, for desktop and Android;
+     - type **Web application**, for the browser, with the site's address under
+       *Authorized JavaScript origins* — e.g. `https://apk.example.com`, and
+       `http://localhost:8080` for `trunk serve`.
+2. Build with them in the environment:
+
+   | Variable | Value |
+   | --- | --- |
+   | `WORDTEE_GOOGLE_DESKTOP_CLIENT_ID` | The Desktop app client's ID |
+   | `WORDTEE_GOOGLE_DESKTOP_CLIENT_SECRET` | Its secret. For this client type Google does not treat it as one: it ships inside every copy of the app |
+   | `WORDTEE_GOOGLE_WEB_CLIENT_ID` | The Web application client's ID |
+
+   ```sh
+   export WORDTEE_GOOGLE_DESKTOP_CLIENT_ID=….apps.googleusercontent.com
+   export WORDTEE_GOOGLE_DESKTOP_CLIENT_SECRET=GOCSPX-…
+   export WORDTEE_GOOGLE_WEB_CLIENT_ID=….apps.googleusercontent.com
+   cargo run --release      # likewise ./scripts/build-apk.sh, trunk build
+   ```
+
+   For Docker and Coolify, set the same three under Environment Variables:
+   `docker-compose.yml` passes them to the build.
+
 ## What this build does not do
 
 The spec describes a product with an editorial pipeline behind it (spec 4.1) and
@@ -156,7 +226,7 @@ these are the honest gaps:
 | 1.3 Media layers 2–4 (images, video snippets, quotes, news) | Not implemented. Licence-gated and V2/V3 in the spec's own roadmap. |
 | 1.2 Phrasal verbs as their own entries | The source has 8.154 phrase entries (idioms, noun phrases) but is missing the common phrasal verbs — no `give up`, `look up`, `run out of`. Nothing to show. |
 | 1.4 On-device TTS | Web only, via the browser's speech synthesis. Desktop and Android would each need a platform binding; the IPA and examples are shown either way. |
-| 1.4 Audio packs, LRU cache, sync | No audio files ship, and there is no server — progress is local, as asked. |
+| 1.4 Audio packs, LRU cache, sync | No audio files ship, and there is no server. Progress is local, and syncs through your own Google Drive if you sign in ([Sync with Google](#sync-with-google)). |
 | 1.2 / 2.1 Sense ranking | The spec samples corpus sentences and has a model label each with a sense. No tagged corpus ships, so a headword's Zipf score is split across its senses as 1/(i+1) in dictionary order. Order *within* a headword is right; the split between headwords is an estimate. |
 | 2.1 Frequency formula | Spoken only (OpenSubtitles). COCA and BNC are commercial, so the 0,6/0,4 blend and Juilland's *D* dispersion cannot be computed from the aggregated counts available. |
 | 1.1 Double Metaphone | Folded into the edit-distance tier, which already covers both of the spec's own examples (`teh`, `fonetic`) at two edits. |
@@ -344,6 +414,7 @@ the better shape — ask and I can add that.
 | `src/quiz.rs` | Distractors and gap-fills, shared by both (spec 2.2, 3.3) |
 | `src/rng.rs` | A small PRNG, so `getrandom` is not in the way on wasm |
 | `src/app.rs` | The shell — tabs, toasts, saved progress — plus the UI tests |
+| `src/google/` | Google sign-in and Drive sync: the shared part in `mod.rs`, desktop and Android sign-in in `native.rs`, the browser's in `web.rs` |
 | `src/ui/` | The four screens |
 | `examples/bench.rs` | Checks lookup against the spec's latency targets |
 | `src/main.rs` | `main`, for desktop and (compiled to wasm) for the browser |
@@ -369,7 +440,7 @@ uses Android's built-in `NativeActivity`, which loads `libwordtee.so` and calls
 cargo run            # debug
 cargo run --release
 
-cargo test                              # 92 tests, no window or GPU needed
+cargo test                              # 125 tests, no window, GPU or network needed
 cargo run --release --example bench     # lookup latency vs. the spec's budget
 ```
 
@@ -381,7 +452,9 @@ that a pure guesser earns no frontier.
 Progress is saved through eframe's storage: a file on desktop and Android, local
 storage in the browser. Only items you have touched are stored; everything below
 the placement frontier is assumed known by rule, which keeps a 25.000-item list
-down to a few kilobytes.
+down to a few kilobytes. A Google account signed in for sync is kept there too —
+on desktop and Android with the refresh token that keeps sync going, so treat
+that file as you would a saved password.
 
 ## Android
 
@@ -478,6 +551,8 @@ trunk build --release         # → dist/
 - The renderer is `glow` — OpenGL ES on Android, WebGL 2 in the browser, OpenGL
   on desktop. It is the lightest and most portable eframe backend.
 - `min_sdk_version` is 24 (Android 7.0).
+- The APK asks for the `INTERNET` permission, used only by
+  [sync](#sync-with-google). Android grants it at install without asking.
 - `include_cplusplus_shared` is off: none of the built `.so` files actually link
   `libc++_shared`, so there is no reason to ship it. Turn it back on in
   `Cargo.toml` if you add a dependency that needs the C++ runtime.

@@ -22,8 +22,22 @@ path = "src/main.rs"
 [dependencies]
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
+# The progress file kept in Google Drive, and Google's API responses.
+serde_json = "1"
+# Query strings and form bodies for Google's sign-in and Drive APIs.
+form_urlencoded = "1"
 # std::time::SystemTime panics on wasm32; this is the same API that works there.
 web-time = "1.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Google sign-in and Drive sync on desktop and Android. rustls with Mozilla's
+# root certificates rather than the system's TLS, so nothing has to be found on
+# the device and there is no OpenSSL to cross-compile for Android.
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+# The PKCE secret and its SHA-256 challenge for the sign-in (RFC 7636).
+getrandom = "0.3"
+sha2 = "0.11"
+base64 = "0.23"
 
 [target.'cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
 eframe = { version = "0.36", default-features = false, features = [
@@ -49,6 +63,13 @@ eframe = { version = "0.36", default-features = false, features = [
     "web_screen_reader",
 ] }
 wasm-bindgen-futures = "0.4"
+# Google sign-in in the browser goes through Google's own script, in
+# web/index.html; these call it, and `fetch` for the Drive API. Same versions
+# as Cargo.lock already holds for eframe: the Dockerfile pins wasm-bindgen-cli
+# to match.
+wasm-bindgen = "0.2.128"
+js-sys = "0.3.105"
+web-sys = { version = "0.3.105", features = ["Headers", "Request", "RequestInit", "Response"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 # `android-native-activity` is incompatible with eframe's `accesskit` feature.
@@ -57,6 +78,8 @@ eframe = { version = "0.36", default-features = false, features = [
     "default_fonts",
     "persistence",
     "glow",
+    # Opens the browser for Google sign-in (through JNI, by `webbrowser`).
+    "links",
 ] }
 android-activity = "0.6"
 android_logger = "0.15"
@@ -95,6 +118,10 @@ target_sdk_version = 35
 label = "WordTee"
 icon = "@mipmap/ic_launcher"
 theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+
+# Google sign-in and Drive sync are the app's only network use.
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
 
 [[package.metadata.android.application.activity]]
 name = "android.app.NativeActivity"

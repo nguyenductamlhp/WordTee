@@ -8,6 +8,10 @@
 //! Only touched items get a card. Everything below the placement test's
 //! frontier is [`State::AssumedKnown`] by rule rather than by row, which is
 //! what keeps a 25.000-item list down to a few kilobytes of saved state.
+//!
+//! With Google sign-in, a copy also lives in the user's Google Drive and other
+//! devices fold it into theirs with [`Progress::merge`]. Every change carries a
+//! [`Stamp`] for that, so two devices that studied apart lose nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,6 +29,17 @@ pub fn today() -> Day {
     web_time::SystemTime::now()
         .duration_since(web_time::UNIX_EPOCH)
         .map_or(0, |d| (d.as_secs() / 86_400) as Day)
+}
+
+/// When something changed, in milliseconds since the Unix epoch. Sync keeps
+/// whichever side changed a thing last; 0 means before stamps existed.
+pub type Stamp = u64;
+
+/// The [`Stamp`] for now.
+pub fn now() -> Stamp {
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as Stamp)
 }
 
 /// Spec 3.4: a card is mastered once it is this stable, among other things.
@@ -130,6 +145,9 @@ pub struct Card {
     pub verified: Day,
     /// Days until the next verification; doubles after each pass (spec 3.5).
     pub verify_gap: u16,
+    /// When this card last changed.
+    #[serde(default)]
+    pub changed: Stamp,
 }
 
 impl Card {
@@ -147,7 +165,15 @@ impl Card {
             source,
             verified: day,
             verify_gap: VERIFY_MIN_GAP as u16,
+            changed: now(),
         }
+    }
+
+    /// Of two copies of one card, is this the one to keep? The later change,
+    /// and for saves from before stamps, the later review.
+    fn newer_than(&self, other: &Card) -> bool {
+        (self.changed, self.last_review, self.reps + self.lapses)
+            > (other.changed, other.last_review, other.reps + other.lapses)
     }
 
     /// Spec 3.6: too many failures, so it needs a different approach.
@@ -178,6 +204,15 @@ impl Card {
 #[serde(default)]
 pub struct Progress {
     cards: BTreeMap<SenseId, Card>,
+    /// Cards an Undo took away, and when. Without these, sync would bring a
+    /// card straight back from a copy made before the Undo.
+    removed: BTreeMap<SenseId, Stamp>,
+    /// When "Erase progress" last ran. Sync drops whatever either side
+    /// changed before it.
+    reset: Stamp,
+
+    // The fields below are public to read. Change them through the `set_*`
+    // methods, which stamp the change for sync.
     /// Spec 2.2: every item at or below this rank is assumed known.
     pub assumed_below: u32,
     /// Spec 2.3: where new items are fed from. Raising it above
@@ -188,17 +223,23 @@ pub struct Progress {
     /// units, kept up to date by later answers.
     pub theta: f32,
     pub placement_done: bool,
+    /// When any of the four placement fields above last changed.
+    placement_changed: Stamp,
     /// New items per day, chosen at onboarding (spec 3.6).
     pub daily_goal: u32,
     /// FSRS desired retention, 0,8–0,95 (spec 3.2).
     pub retention: f32,
     pub theme: Theme,
+    /// When any of the three settings above last changed.
+    settings_changed: Stamp,
     pub streak: u32,
     pub best_streak: u32,
     /// Last day the user studied, for the streak.
     pub last_active: Day,
     /// Spec 3.6: the streak freeze, usable once a week.
     pub freeze_used: Day,
+    /// When any of the four streak fields above last changed.
+    streak_changed: Stamp,
     /// The day the counters below belong to.
     pub day: Day,
     pub new_today: u32,
@@ -219,18 +260,23 @@ impl Default for Progress {
     fn default() -> Self {
         Self {
             cards: BTreeMap::new(),
+            removed: BTreeMap::new(),
+            reset: 0,
             assumed_below: 0,
             frontier: 1,
             // ln(3000): a mid-list starting guess until the test runs.
             theta: 8.0,
             placement_done: false,
+            placement_changed: 0,
             daily_goal: 10,
             retention: 0.9,
             theme: Theme::Light,
+            settings_changed: 0,
             streak: 0,
             best_streak: 0,
             last_active: 0,
             freeze_used: 0,
+            streak_changed: 0,
             day: today(),
             new_today: 0,
             scanned_today: 0,
@@ -354,6 +400,7 @@ impl Progress {
                     sense.id,
                     Card::new(State::Unexplored, Source::Test, self.day),
                 );
+                self.removed.remove(&sense.id);
                 self.rev += 1;
             }
         }
@@ -376,6 +423,8 @@ impl Progress {
             card.verified = day;
             card.verify_gap = VERIFY_MIN_GAP as u16;
         }
+        card.changed = now();
+        self.removed.remove(&sense);
         Undo {
             sense,
             before,
@@ -386,12 +435,21 @@ impl Progress {
     /// Puts back what [`Self::set_state`] or [`Self::answer`] changed.
     pub fn undo(&mut self, undo: Undo) {
         self.rev += 1;
+        // Putting a card back is itself a change: stamped now, it wins over a
+        // copy of the undone version that sync may already have sent.
         match undo.before {
             Some(card) => {
-                self.cards.insert(undo.sense, card);
+                self.cards.insert(
+                    undo.sense,
+                    Card {
+                        changed: now(),
+                        ..card
+                    },
+                );
             }
             None => {
                 self.cards.remove(&undo.sense);
+                self.removed.insert(undo.sense, now());
             }
         }
     }
@@ -459,6 +517,8 @@ impl Progress {
         } else {
             day + memory.interval(retention).round() as Day
         };
+        card.changed = now();
+        self.removed.remove(&sense);
         self.reviews_today += 1;
         (
             grade,
@@ -487,6 +547,7 @@ impl Progress {
             card.due = day;
             card.verify_gap = VERIFY_MIN_GAP as u16;
         }
+        card.changed = now();
     }
 
     /// Spec 2.2: records the placement result.
@@ -496,6 +557,7 @@ impl Progress {
         self.frontier = frontier.saturating_add(1);
         self.theta = theta;
         self.placement_done = true;
+        self.placement_changed = now();
     }
 
     /// Spec 2.3, rule 1: the frontier advances once the next block is mostly
@@ -503,8 +565,48 @@ impl Progress {
     pub fn advance_frontier(&mut self, explored_ratio: f32) {
         if explored_ratio >= 0.9 {
             self.frontier = self.frontier.saturating_add(1_000);
+            self.placement_changed = now();
             self.rev += 1;
         }
+    }
+
+    /// Spec 2.3, rule 3: moves where new items come from — the Skip Band, or
+    /// back to just above the assumed-known range.
+    pub fn set_frontier(&mut self, frontier: u32) {
+        self.frontier = frontier;
+        self.placement_changed = now();
+        self.rev += 1;
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+        self.settings_changed();
+    }
+
+    pub fn set_daily_goal(&mut self, goal: u32) {
+        self.daily_goal = goal;
+        self.settings_changed();
+    }
+
+    pub fn set_retention(&mut self, retention: f32) {
+        self.retention = retention;
+        self.settings_changed();
+    }
+
+    fn settings_changed(&mut self) {
+        self.settings_changed = now();
+        self.rev += 1;
+    }
+
+    /// "Erase progress": back to a fresh start, and a mark that tells sync to
+    /// erase every other copy too rather than restore from it.
+    pub fn erase(&mut self, day: Day) {
+        *self = Self {
+            reset: now(),
+            rev: self.rev + 1,
+            ..Self::default()
+        };
+        self.roll_to(day);
     }
 
     /// Rolls the day over: resets the daily counters and updates the streak.
@@ -523,6 +625,7 @@ impl Progress {
             } else {
                 self.streak = 0;
             }
+            self.streak_changed = now();
         }
         self.day = day;
         self.new_today = 0;
@@ -543,7 +646,148 @@ impl Progress {
         };
         self.best_streak = self.best_streak.max(self.streak);
         self.last_active = day;
+        self.streak_changed = now();
         self.rev += 1;
+    }
+
+    // --- sync ------------------------------------------------------------
+
+    /// Folds another copy of this progress into this one, as sync does with
+    /// the copy kept in Google Drive. Returns whether anything here changed.
+    ///
+    /// Each part keeps whichever side changed it last, so merging in either
+    /// order, or the same copy twice, comes out the same:
+    ///
+    /// - a card: the later-changed copy; an Undo that took one away wins over
+    ///   any copy older than the Undo
+    /// - placement, and the settings: whichever side set them last
+    /// - the streak: whichever side studied last
+    /// - today's counters: the later day, or the higher count on the same day,
+    ///   so a daily limit used up on one device is used up on all
+    /// - lookups: everything either side looked up
+    ///
+    /// "Erase progress" on either side first drops everything the other side
+    /// changed before it.
+    pub fn merge(&mut self, other: &Progress) -> bool {
+        let reset = self.reset.max(other.reset);
+        let mut changed = self.forget_before(reset);
+        let mut theirs = other.clone();
+        theirs.forget_before(reset);
+
+        for (&id, card) in &theirs.cards {
+            let newer = match (self.cards.get(&id), self.removed.get(&id)) {
+                (Some(mine), _) => card.newer_than(mine),
+                (None, Some(&gone)) => card.changed > gone,
+                (None, None) => true,
+            };
+            if newer {
+                self.cards.insert(id, card.clone());
+                self.removed.remove(&id);
+                changed = true;
+            }
+        }
+        // A removal stamped the same millisecond as a card wins, whichever
+        // side each is on, so the two loops agree.
+        for (&id, &gone) in &theirs.removed {
+            let newer = match (self.cards.get(&id), self.removed.get(&id)) {
+                (Some(mine), _) => gone >= mine.changed,
+                (None, Some(&mine)) => gone > mine,
+                (None, None) => true,
+            };
+            if newer {
+                self.cards.remove(&id);
+                self.removed.insert(id, gone);
+                changed = true;
+            }
+        }
+
+        // Saves from before stamps have 0 on both sides; a placement that was
+        // actually taken still beats none.
+        let placement = |p: &Progress| (p.placement_changed, p.placement_done, p.assumed_below);
+        if placement(&theirs) > placement(self) {
+            self.assumed_below = theirs.assumed_below;
+            self.frontier = theirs.frontier;
+            self.theta = theirs.theta;
+            self.placement_done = theirs.placement_done;
+            self.placement_changed = theirs.placement_changed;
+            changed = true;
+        }
+        if theirs.settings_changed > self.settings_changed {
+            self.daily_goal = theirs.daily_goal;
+            self.retention = theirs.retention;
+            self.theme = theirs.theme;
+            self.settings_changed = theirs.settings_changed;
+            changed = true;
+        }
+        // By who studied last rather than by stamp: opening a long-idle device
+        // breaks its own streak (`roll_to`), which must not break the one kept
+        // up on another device.
+        if (theirs.last_active, theirs.streak_changed) > (self.last_active, self.streak_changed) {
+            self.streak = theirs.streak;
+            self.best_streak = theirs.best_streak;
+            self.last_active = theirs.last_active;
+            self.freeze_used = theirs.freeze_used;
+            self.streak_changed = theirs.streak_changed;
+            changed = true;
+        }
+        if theirs.day > self.day {
+            self.day = theirs.day;
+            self.new_today = theirs.new_today;
+            self.scanned_today = theirs.scanned_today;
+            self.reviews_today = theirs.reviews_today;
+            changed = true;
+        } else if theirs.day == self.day {
+            let counters = |p: &Progress| [p.new_today, p.scanned_today, p.reviews_today];
+            let max = std::array::from_fn(|i| counters(self)[i].max(counters(&theirs)[i]));
+            if max != counters(self) {
+                [self.new_today, self.scanned_today, self.reviews_today] = max;
+                changed = true;
+            }
+        }
+        for &word in &theirs.lookups {
+            changed |= self.lookups.insert(word);
+        }
+
+        if changed {
+            self.rev += 1;
+        }
+        changed
+    }
+
+    /// Applies an "Erase progress" made at `reset`, if this copy has not seen
+    /// it yet: drops everything changed before then. Lookups carry no stamp, so
+    /// they all go.
+    fn forget_before(&mut self, reset: Stamp) -> bool {
+        if reset <= self.reset {
+            return false;
+        }
+        let fresh = Self::default();
+        self.cards.retain(|_, card| card.changed >= reset);
+        self.removed.retain(|_, &mut gone| gone >= reset);
+        if self.placement_changed < reset {
+            self.assumed_below = fresh.assumed_below;
+            self.frontier = fresh.frontier;
+            self.theta = fresh.theta;
+            self.placement_done = fresh.placement_done;
+            self.placement_changed = 0;
+        }
+        if self.settings_changed < reset {
+            self.daily_goal = fresh.daily_goal;
+            self.retention = fresh.retention;
+            self.theme = fresh.theme;
+            self.settings_changed = 0;
+        }
+        if self.streak_changed < reset {
+            self.streak = 0;
+            self.best_streak = 0;
+            self.last_active = 0;
+            self.freeze_used = 0;
+            self.streak_changed = 0;
+        }
+        self.lookups.clear();
+        self.reset = reset;
+        self.rev += 1;
+        true
     }
 }
 
@@ -871,5 +1115,213 @@ mod tests {
         assert_eq!(back.state(&s), p.state(&s));
         assert_eq!(back.card(s.id).unwrap().reps, 1);
         assert!(back.lookups.contains(&s.word));
+    }
+
+    // --- sync ------------------------------------------------------------
+
+    /// What sync compares: everything that is saved.
+    fn saved(p: &Progress) -> String {
+        serde_json::to_string(p).expect("serialises")
+    }
+
+    /// Two copies of one starting point, as two devices hold after a sync.
+    fn two_devices() -> (Progress, Progress) {
+        let mut p = Progress::default();
+        p.apply_placement(2_000, 7.6);
+        p.start_learning(10, Source::Manual, 100);
+        p.set_state(11, State::Known, Source::Manual, 100);
+        (p.clone(), p)
+    }
+
+    /// Back-dates a card, so tests do not depend on the clock moving between
+    /// two calls.
+    fn stamp(p: &mut Progress, id: SenseId, at: Stamp) {
+        p.cards.get_mut(&id).expect("card exists").changed = at;
+    }
+
+    /// Lets the millisecond clock move on, for "later" in tests that need it.
+    fn later() {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+
+    #[test]
+    fn merging_keeps_what_both_devices_did() {
+        let (mut phone, mut laptop) = two_devices();
+        phone.answer(10, right(1), 101);
+        phone.start_learning(20, Source::Study, 101);
+        laptop.set_state(30, State::Known, Source::Manual, 101);
+        laptop.note_lookup(7, &[]);
+
+        assert!(phone.merge(&laptop));
+        assert_eq!(phone.card(10).unwrap().reps, 1, "the phone's answer stays");
+        assert!(phone.card(20).is_some());
+        assert_eq!(phone.card(30).unwrap().state, State::Known);
+        assert!(phone.lookups.contains(&7));
+        assert!(phone.revision() > 0);
+    }
+
+    #[test]
+    fn the_later_change_to_a_card_wins() {
+        let (mut phone, mut laptop) = two_devices();
+        phone.set_state(10, State::Known, Source::Manual, 101);
+        stamp(&mut phone, 10, 2_000);
+        laptop.answer(10, wrong(), 101);
+        stamp(&mut laptop, 10, 3_000);
+
+        phone.merge(&laptop);
+        assert_eq!(phone.card(10).unwrap().state, State::Learning);
+        assert_eq!(phone.card(10).unwrap().lapses, 1);
+    }
+
+    #[test]
+    fn merging_is_order_independent_and_settles() {
+        let (mut a, mut b) = two_devices();
+        a.answer(10, right(2), 101);
+        stamp(&mut a, 10, 5_000);
+        b.answer(10, wrong(), 101);
+        stamp(&mut b, 10, 4_000);
+        a.start_learning(40, Source::Study, 101);
+        b.set_state(41, State::Known, Source::Manual, 101);
+        b.set_theme(Theme::Dark);
+        a.mark_active(101);
+        b.scanned_today = 6;
+        a.note_lookup(3, &[]);
+        b.note_lookup(4, &[]);
+
+        let mut ab = a.clone();
+        ab.merge(&b);
+        let mut ba = b.clone();
+        ba.merge(&a);
+        assert_eq!(saved(&ab), saved(&ba));
+
+        // Nothing left to learn from either side.
+        assert!(!ab.merge(&a));
+        assert!(!ab.merge(&b));
+        assert!(!ab.merge(&ba));
+    }
+
+    #[test]
+    fn an_undo_is_not_undone_by_sync() {
+        let (mut phone, mut laptop) = two_devices();
+        let undo = phone.start_learning(50, Source::Manual, 101);
+        laptop.merge(&phone);
+        assert!(laptop.card(50).is_some(), "synced before the Undo");
+
+        phone.undo(undo);
+        assert!(!phone.merge(&laptop), "the old copy must not bring it back");
+        assert!(phone.card(50).is_none());
+        laptop.merge(&phone);
+        assert!(laptop.card(50).is_none(), "and the Undo reaches the laptop");
+
+        // Learning it again later brings it back everywhere.
+        later();
+        phone.start_learning(50, Source::Manual, 102);
+        laptop.merge(&phone);
+        assert!(laptop.card(50).is_some());
+    }
+
+    #[test]
+    fn erasing_progress_reaches_other_devices() {
+        let (mut phone, mut laptop) = two_devices();
+        laptop.set_theme(Theme::Dark);
+        later();
+        phone.erase(101);
+
+        laptop.merge(&phone);
+        assert!(laptop.card(10).is_none() && laptop.card(11).is_none());
+        assert!(!laptop.placement_done);
+        assert_eq!(laptop.theme, Theme::Light);
+
+        // What the laptop does after the erase is kept.
+        laptop.start_learning(60, Source::Manual, 101);
+        phone.merge(&laptop);
+        assert!(phone.card(60).is_some());
+        assert!(phone.card(10).is_none());
+    }
+
+    #[test]
+    fn saves_from_before_sync_merge_by_what_they_hold() {
+        let mut old = Progress::default();
+        old.apply_placement(3_000, 8.0);
+        old.answer(10, right(1), 90);
+        old.placement_changed = 0;
+        stamp(&mut old, 10, 0);
+        // The fields sync added are missing from such a save.
+        let mut value = serde_json::to_value(&old).expect("serialises");
+        let fields = value.as_object_mut().expect("a struct");
+        for key in [
+            "removed",
+            "reset",
+            "placement_changed",
+            "settings_changed",
+            "streak_changed",
+        ] {
+            assert!(fields.remove(key).is_some(), "{key} is saved");
+        }
+        for card in fields["cards"].as_object_mut().expect("a map").values_mut() {
+            card.as_object_mut().expect("a struct").remove("changed");
+        }
+        let old: Progress = serde_json::from_value(value).expect("an old save still loads");
+
+        // A fresh install signing in takes the placement that was taken…
+        let mut fresh = Progress::default();
+        fresh.merge(&old);
+        assert!(fresh.placement_done);
+        assert_eq!(fresh.assumed_below, 3_000);
+
+        // …and of two unstamped copies of a card, the later review.
+        let mut other = old.clone();
+        other.answer(10, wrong(), 95);
+        stamp(&mut other, 10, 0);
+        let mut merged = old.clone();
+        merged.merge(&other);
+        assert_eq!(merged.card(10).unwrap().last_review, 95);
+    }
+
+    #[test]
+    fn the_streak_follows_whoever_studied_last() {
+        let (mut phone, mut laptop) = two_devices();
+        for day in 90..=100 {
+            phone.roll_to(day);
+            phone.mark_active(day);
+        }
+        // The laptop was last used long ago; opening it breaks its streak,
+        // and that is the newer change.
+        laptop.mark_active(50);
+        laptop.roll_to(100);
+        assert_eq!(laptop.streak, 0);
+
+        laptop.merge(&phone);
+        assert_eq!(laptop.streak, 11);
+        assert_eq!(laptop.last_active, 100);
+    }
+
+    #[test]
+    fn todays_counters_take_the_higher_count() {
+        let (mut phone, mut laptop) = two_devices();
+        phone.roll_to(200);
+        laptop.roll_to(200);
+        phone.new_today = 7;
+        laptop.new_today = 3;
+        laptop.reviews_today = 12;
+        laptop.merge(&phone);
+        assert_eq!((laptop.new_today, laptop.reviews_today), (7, 12));
+
+        // Yesterday's counts do not override today's.
+        let mut stale = phone.clone();
+        stale.day = 199;
+        stale.new_today = 50;
+        assert!(!laptop.merge(&stale));
+        assert_eq!(laptop.new_today, 7);
+    }
+
+    #[test]
+    fn progress_survives_json() {
+        let (mut p, _) = two_devices();
+        p.note_lookup(9, &[]);
+        let undo = p.start_learning(70, Source::Manual, 100);
+        p.undo(undo);
+        let back: Progress = serde_json::from_str(&saved(&p)).expect("deserialises");
+        assert_eq!(saved(&back), saved(&p));
     }
 }

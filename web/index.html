@@ -13,6 +13,38 @@
     <link data-trunk rel="rust" href="../Cargo.toml" data-bin="wordtee-app" data-wasm-opt="z"
         data-wasm-opt-params="--enable-bulk-memory-opt --enable-nontrapping-float-to-int" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 108 108'><rect width='108' height='108' rx='24' fill='%230b6fc2'/><g transform='matrix(1.25 0 0 1.25 -13.5 -13.5)'><path d='M30 43 41 75 54 51 67 75 78 43' fill='none' stroke='%23fff' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/><circle cx='54' cy='36' r='6.5' fill='%23f5b341'/></g></svg>" />
+
+    <!-- Google sign-in, for syncing progress through Google Drive
+         (src/google/web.rs). Google's script opens its own popup; the app
+         calls the two functions below. -->
+    <script src="https://accounts.google.com/gsi/client" async></script>
+    <script>
+        // Resolves with Google's token response, or rejects with an Error
+        // whose message is Google's error code ("popup_closed", …).
+        window.wordteeGoogleToken = (clientId, scope, prompt, hint) =>
+            new Promise((resolve, reject) => {
+                const oauth2 = window.google && google.accounts && google.accounts.oauth2;
+                if (!oauth2) {
+                    reject(new Error("not_loaded"));
+                    return;
+                }
+                oauth2.initTokenClient({
+                    client_id: clientId,
+                    scope,
+                    prompt,
+                    login_hint: hint || undefined,
+                    callback: (response) =>
+                        response.error ? reject(new Error(response.error)) : resolve(response),
+                    error_callback: (error) => reject(new Error(error.type)),
+                }).requestAccessToken();
+            });
+
+        window.wordteeGoogleRevoke = (token) => {
+            if (window.google && google.accounts && google.accounts.oauth2) {
+                google.accounts.oauth2.revoke(token, () => {});
+            }
+        };
+    </script>
 </head>
 
 <body>

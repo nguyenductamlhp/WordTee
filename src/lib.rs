@@ -10,6 +10,7 @@
 
 mod app;
 pub mod dict;
+pub mod google;
 pub mod placement;
 pub mod progress;
 pub mod quiz;

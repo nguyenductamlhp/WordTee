@@ -4,6 +4,7 @@
 use eframe::egui::{self, RichText};
 
 use crate::dict::{Dict, WordId};
+use crate::google::Google;
 use crate::progress::{self, Day, Progress, Theme, Undo};
 use crate::quiz::Shown;
 use crate::rng::Rng;
@@ -80,6 +81,8 @@ pub struct Toast {
 pub struct Ctx<'a> {
     pub dict: &'a Dict,
     pub progress: &'a mut Progress,
+    /// Google sign-in, and syncing the progress through Drive.
+    pub google: &'a mut Google,
     pub rng: &'a mut Rng,
     pub day: Day,
     pub shown: &'a mut Shown,
@@ -115,6 +118,7 @@ impl Ctx<'_> {
 pub struct WordTeeApp {
     dict: Dict,
     progress: Progress,
+    google: Google,
     rng: Rng,
     day: Day,
     shown: Shown,
@@ -134,6 +138,7 @@ impl Default for WordTeeApp {
         Self {
             dict: Dict::load(),
             progress,
+            google: Google::default(),
             rng: Rng::new(),
             day,
             shown: Shown::default(),
@@ -158,6 +163,7 @@ impl WordTeeApp {
             app.progress = saved;
             app.progress.roll_to(app.day);
         }
+        app.google = Google::load(cc.storage);
         app
     }
 
@@ -242,6 +248,7 @@ impl WordTeeApp {
             self.progress.roll_to(day);
             self.study.reset();
         }
+        self.google.update(ui.ctx(), &mut self.progress, now);
 
         // The setting rides along with the saved progress, so this is also what
         // restores the chosen theme on the first frame after a restart.
@@ -278,6 +285,7 @@ impl WordTeeApp {
         let mut ctx = Ctx {
             dict: &self.dict,
             progress: &mut self.progress,
+            google: &mut self.google,
             rng: &mut self.rng,
             day: self.day,
             shown: &mut self.shown,
@@ -373,6 +381,7 @@ impl eframe::App for WordTeeApp {
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, STORAGE_KEY, &self.progress);
+        self.google.save(storage);
     }
 }
 
@@ -699,6 +708,7 @@ mod tests {
         let mut ctx = Ctx {
             dict: &h.app.dict,
             progress: &mut h.app.progress,
+            google: &mut h.app.google,
             rng: &mut rng,
             day: h.app.day,
             shown: &mut shown,

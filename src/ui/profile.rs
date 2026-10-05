@@ -4,8 +4,9 @@
 use eframe::egui::{self, RichText};
 
 use crate::app::Ctx;
+use crate::google::Status;
 use crate::placement::{FALSE_ALARM_LIMIT, MAX_ITEMS, Placement, Verdict};
-use crate::progress::{Progress, State, Theme};
+use crate::progress::{self, Stamp, State, Theme};
 use crate::ui;
 
 #[derive(Default)]
@@ -139,6 +140,10 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             );
         });
 
+        // --- Google sign-in and sync ---
+        ui.add_space(8.0);
+        sync_card(ui, ctx);
+
         // --- settings (spec 3.2, 3.6) ---
         ui.add_space(8.0);
         ui::card(ui, None, |ui| {
@@ -150,7 +155,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                 for theme in [Theme::Light, Theme::Dark] {
                     let on = ctx.progress.theme == theme;
                     if ui.selectable_label(on, theme.label()).clicked() {
-                        ctx.progress.theme = theme;
+                        ctx.progress.set_theme(theme);
                     }
                 }
             });
@@ -161,7 +166,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                 for goal in [5u32, 10, 20] {
                     let on = ctx.progress.daily_goal == goal;
                     if ui.selectable_label(on, format!("{goal}")).clicked() {
-                        ctx.progress.daily_goal = goal;
+                        ctx.progress.set_daily_goal(goal);
                     }
                 }
             });
@@ -169,11 +174,17 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui.add_space(8.0);
             // Spec 3.2: desired retention, adjustable between 0,8 and 0,95.
             ui.label(RichText::new("Target retention").size(13.0));
-            ui.add(
-                egui::Slider::new(&mut ctx.progress.retention, 0.8..=0.95)
-                    .fixed_decimals(2)
-                    .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
-            );
+            let mut retention = ctx.progress.retention;
+            if ui
+                .add(
+                    egui::Slider::new(&mut retention, 0.8..=0.95)
+                        .fixed_decimals(2)
+                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
+                )
+                .changed()
+            {
+                ctx.progress.set_retention(retention);
+            }
             ui.label(
                 RichText::new("Higher means firmer recall, but more reviews to sit through.")
                     .size(11.5)
@@ -187,13 +198,14 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                 ui.horizontal_wrapped(|ui| {
                     for jump in [1_000u32, 3_000] {
                         if ui.button(format!("+{}", ui::thousands(jump))).clicked() {
-                            ctx.progress.frontier =
-                                (ctx.progress.frontier + jump).min(ctx.dict.learn_count());
+                            ctx.progress.set_frontier(
+                                (ctx.progress.frontier + jump).min(ctx.dict.learn_count()),
+                            );
                             ctx.say("Jumped to a higher band. The skipped range still comes up in Quick scan.");
                         }
                     }
                     if ui.button("Reset").clicked() {
-                        ctx.progress.frontier = ctx.progress.assumed_below + 1;
+                        ctx.progress.set_frontier(ctx.progress.assumed_below + 1);
                     }
                 });
             }
@@ -238,7 +250,8 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui.add_space(4.0);
             ui.label(
                 RichText::new(
-                    "Everything lives on your device: lookup, study and review all work offline.",
+                    "Everything lives on your device: lookup, study and review all work offline. \
+                     Signing in to sync adds a copy in your own Google Drive.",
                 )
                 .size(11.5)
                 .color(ui::muted(ui)),
@@ -251,9 +264,13 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui::card(ui, Some(ui::bad(ui)), |ui| {
                 ui.label(RichText::new("Erase all progress?").strong());
                 ui.label(
-                    RichText::new("This cannot be undone.")
-                        .size(12.0)
-                        .color(ui::muted(ui)),
+                    RichText::new(if ctx.google.signed_in() {
+                        "This cannot be undone, and sync erases it on your other devices too."
+                    } else {
+                        "This cannot be undone."
+                    })
+                    .size(12.0)
+                    .color(ui::muted(ui)),
                 );
                 ui.add_space(6.0);
                 let danger = ui::bad(ui);
@@ -262,8 +279,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                         state.confirm_reset = false;
                     }
                     if c[1].button(RichText::new("Erase").color(danger)).clicked() {
-                        *ctx.progress = Progress::default();
-                        ctx.progress.roll_to(ctx.day);
+                        ctx.progress.erase(ctx.day);
                         state.confirm_reset = false;
                         ctx.say("Progress erased.");
                     }
@@ -277,6 +293,114 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
         }
         ui.add_space(16.0);
     });
+}
+
+/// Signing in with Google, and how the copy in Drive stands.
+fn sync_card(ui: &mut egui::Ui, ctx: &mut Ctx) {
+    let now = ctx.now;
+    ui::card(ui, None, |ui| {
+        // Full width in every state, like the cards around it, even when
+        // nothing inside is that wide.
+        ui.set_min_width(ui.available_width());
+        ui.label(RichText::new("Sync").size(17.0).strong());
+        ui.add_space(4.0);
+        let note = |ui: &mut egui::Ui, text: &str| {
+            ui.label(RichText::new(text).size(12.5).color(ui::muted(ui)));
+        };
+        let problem = |ui: &mut egui::Ui, text: &str| {
+            ui.label(RichText::new(text).size(12.5).color(ui::bad(ui)));
+        };
+
+        match ctx.google.status() {
+            Status::Unavailable => {
+                note(ui, "Google sign-in is not set up in this build.");
+            }
+            Status::SignedOut { error } => {
+                note(
+                    ui,
+                    "Sign in with Google to keep a copy of your progress in your Google Drive, \
+                     and pick up where you left off on another device.",
+                );
+                if let Some(error) = error {
+                    problem(ui, &error);
+                }
+                ui.add_space(6.0);
+                if ui::wide_button(ui, "Sign in with Google", ui::accent(ui)).clicked() {
+                    ctx.google.sign_in(ui.ctx());
+                }
+            }
+            Status::SigningIn => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    note(
+                        ui,
+                        if cfg!(target_arch = "wasm32") {
+                            "Finish signing in in Google's window…"
+                        } else {
+                            "Finish signing in in your browser, then come back here…"
+                        },
+                    );
+                });
+                if ui.button("Cancel").clicked() {
+                    ctx.google.cancel();
+                }
+            }
+            Status::SignedIn {
+                name,
+                email,
+                syncing,
+                synced,
+                error,
+                waiting,
+            } => {
+                if !name.is_empty() {
+                    ui.label(RichText::new(name).strong());
+                }
+                note(ui, &email);
+                ui.add_space(2.0);
+                if syncing {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        note(ui, "Syncing…");
+                    });
+                } else if let Some(error) = error {
+                    problem(ui, &error);
+                } else {
+                    let mut line = synced.map_or("Not synced yet.".into(), ago);
+                    if waiting {
+                        line += " Tap Sync now to sync again.";
+                    }
+                    note(ui, &line);
+                }
+                ui.add_space(6.0);
+                ui.columns(2, |c| {
+                    let size = egui::vec2(c[0].available_width(), 38.0);
+                    let sync = egui::Button::new("Sync now").min_size(size);
+                    if c[0].add_enabled(!syncing, sync).clicked() {
+                        ctx.google.sync_now(c[0].ctx(), ctx.progress, now);
+                    }
+                    if c[1]
+                        .add(egui::Button::new("Sign out").min_size(size))
+                        .clicked()
+                    {
+                        ctx.google.sign_out();
+                        ctx.say("Signed out. Your progress stays on this device.");
+                    }
+                });
+            }
+        }
+    });
+}
+
+/// "Synced 5 min ago".
+fn ago(when: Stamp) -> String {
+    let minutes = progress::now().saturating_sub(when) / 60_000;
+    match minutes {
+        0 => "Synced just now.".into(),
+        1..=59 => format!("Synced {minutes} min ago."),
+        60..=1_439 => format!("Synced {} h ago.", minutes / 60),
+        _ => format!("Synced {} days ago.", minutes / 1_440),
+    }
 }
 
 // -------------------------------------------------------------------------

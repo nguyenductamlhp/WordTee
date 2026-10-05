@@ -62,6 +62,11 @@ COPY android/ ./android/
 # before the compiler runs. See scripts/build-dict.py.
 COPY assets/ ./assets/
 
+# Google sign-in, compiled into the app; empty builds it without. Declared
+# here, after the SDK layers, so changing them rebuilds only the app.
+ARG WORDTEE_GOOGLE_DESKTOP_CLIENT_ID=
+ARG WORDTEE_GOOGLE_DESKTOP_CLIENT_SECRET=
+
 # `--out /out` leaves a directory holding just the finished APK, with no
 # intermediate unaligned copy for the web server to serve by accident.
 RUN ./scripts/build-apk.sh --release --abi "${APK_ABI:-arm64}" --out /out \
@@ -103,6 +108,9 @@ COPY Cargo.toml Cargo.lock Trunk.toml ./
 COPY src/ ./src/
 COPY web/ ./web/
 COPY assets/ ./assets/
+
+# Google sign-in, compiled into the app; empty builds it without.
+ARG WORDTEE_GOOGLE_WEB_CLIENT_ID=
 
 # `--offline` reaches cargo too, so the crates are fetched first, checked
 # against Cargo.lock.
