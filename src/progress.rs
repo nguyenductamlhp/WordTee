@@ -65,6 +65,176 @@ const LEVEL3_STABILITY: f32 = 21.0;
 /// Successful reviews before a Learning item graduates to Review (spec 3.1).
 const GRADUATE_REPS: u32 = 2;
 
+/// Unix seconds. Reminders are the one thing here finer-grained than a day.
+pub fn now_secs() -> i64 {
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
+/// How often to nudge the user back to studying (spec 3.6: "Nhắc ôn qua thông
+/// báo đẩy vào khung giờ người dùng hay học").
+///
+/// An interval rather than a clock time on purpose: the app has no reliable
+/// local timezone — `SystemTime` is UTC everywhere — so "every four hours" is
+/// a promise it can keep and "every day at 8pm" is not.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Reminders {
+    Off,
+    EveryFourHours,
+    EveryEightHours,
+    #[default]
+    Daily,
+}
+
+impl Reminders {
+    pub const ALL: [Self; 4] = [
+        Self::Off,
+        Self::EveryFourHours,
+        Self::EveryEightHours,
+        Self::Daily,
+    ];
+
+    /// Hours between nudges, or `None` when switched off.
+    pub fn every_hours(self) -> Option<i64> {
+        match self {
+            Self::Off => None,
+            Self::EveryFourHours => Some(4),
+            Self::EveryEightHours => Some(8),
+            Self::Daily => Some(24),
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::EveryFourHours => "Every 4h",
+            Self::EveryEightHours => "Every 8h",
+            Self::Daily => "Once a day",
+        }
+    }
+}
+
+/// Which English the audio speaks.
+///
+/// The dictionary carries one transcription per word and does not say whose,
+/// so this steers the voice and nothing else — there is no second IPA to show.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Accent {
+    Uk,
+    #[default]
+    Us,
+}
+
+impl Accent {
+    pub const ALL: [Self; 2] = [Self::Uk, Self::Us];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Uk => "UK",
+            Self::Us => "US",
+        }
+    }
+
+    /// BCP-47 tag for the speech synthesiser.
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Uk => "en-GB",
+            Self::Us => "en-US",
+        }
+    }
+}
+
+/// How a headword is capitalised on screen.
+///
+/// The dictionary stores headwords lowercase, which is right for matching and
+/// plain for reading.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Casing {
+    #[default]
+    Sentence,
+    Lower,
+    Upper,
+}
+
+impl Casing {
+    pub const ALL: [Self; 3] = [Self::Sentence, Self::Lower, Self::Upper];
+
+    /// The label doubles as a sample of what it does.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Sentence => "Aa",
+            Self::Lower => "aa",
+            Self::Upper => "AA",
+        }
+    }
+
+    pub fn apply(self, word: &str) -> String {
+        match self {
+            Self::Lower => word.to_lowercase(),
+            Self::Upper => word.to_uppercase(),
+            Self::Sentence => {
+                let mut chars = word.chars();
+                match chars.next() {
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                    None => String::new(),
+                }
+            }
+        }
+    }
+}
+
+/// Which of spec 3.3's three exercise levels the user is willing to be asked.
+///
+/// Turning the last one off would leave nothing to ask, so [`Self::level_for`]
+/// always has an answer: it walks down from the level a card has earned to the
+/// nearest one that is allowed, and recognition is forced back on if all three
+/// are cleared.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Challenges {
+    /// Level 1: pick the meaning.
+    pub recognise: bool,
+    /// Level 2: fill the gap, or pick the word.
+    pub recall: bool,
+    /// Level 3: spell it out.
+    pub produce: bool,
+}
+
+impl Default for Challenges {
+    fn default() -> Self {
+        Self {
+            recognise: true,
+            recall: true,
+            produce: true,
+        }
+    }
+}
+
+impl Challenges {
+    pub fn allows(self, level: u8) -> bool {
+        match level {
+            1 => self.recognise,
+            2 => self.recall,
+            3 => self.produce,
+            _ => true,
+        }
+    }
+
+    /// The highest allowed level at or below `earned`.
+    pub fn level_for(self, earned: u8) -> u8 {
+        (1..=earned.clamp(1, 3))
+            .rev()
+            .find(|l| self.allows(*l))
+            .or_else(|| (1..=3).find(|l| self.allows(*l)))
+            .unwrap_or(1)
+    }
+
+    /// How many are switched on, so the UI can refuse to clear the last one.
+    pub fn count(self) -> usize {
+        usize::from(self.recognise) + usize::from(self.recall) + usize::from(self.produce)
+    }
+}
+
 /// Which colour scheme to draw in.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum Theme {
@@ -230,8 +400,23 @@ pub struct Progress {
     /// FSRS desired retention, 0,8–0,95 (spec 3.2).
     pub retention: f32,
     pub theme: Theme,
-    /// When any of the three settings above last changed.
+    pub accent: Accent,
+    pub casing: Casing,
+    pub challenges: Challenges,
+    /// Show the example sentence beside a meaning.
+    pub show_examples: bool,
+    /// Speak a word as soon as its card appears.
+    pub auto_pronounce: bool,
+    /// Warn when a streak is about to lapse.
+    pub streak_alerts: bool,
+    /// Call out an item that keeps being missed (spec 3.6's leech).
+    pub hard_word_alert: bool,
+    /// How often to nudge about studying (spec 3.6).
+    pub reminders: Reminders,
+    /// When any of the settings above, from `daily_goal` on, last changed.
     settings_changed: Stamp,
+    /// Unix seconds of the last nudge, so one interval means one nudge.
+    pub last_reminded: i64,
     pub streak: u32,
     pub best_streak: u32,
     /// Last day the user studied, for the streak.
@@ -271,7 +456,16 @@ impl Default for Progress {
             daily_goal: 10,
             retention: 0.9,
             theme: Theme::Light,
+            accent: Accent::default(),
+            casing: Casing::default(),
+            challenges: Challenges::default(),
+            show_examples: true,
+            auto_pronounce: false,
+            streak_alerts: true,
+            hard_word_alert: true,
+            reminders: Reminders::default(),
             settings_changed: 0,
+            last_reminded: 0,
             streak: 0,
             best_streak: 0,
             last_active: 0,
@@ -315,6 +509,50 @@ impl Progress {
         self.rev
     }
 
+    /// How well one item is known, 0 to 1.
+    ///
+    /// Not a separate score: it reads the same FSRS stability the scheduler
+    /// runs on, against spec 3.4's 60-day mastery threshold. So the Home
+    /// screen's meter and the review schedule can never disagree — a right
+    /// answer lengthens the interval and fills the bar by the same act.
+    pub fn mastery(&self, sense: &Sense) -> f32 {
+        let state = self.state(sense);
+        let floor = match state {
+            State::Unexplored => return 0.0,
+            State::Mastered => return 1.0,
+            // Inferred, not demonstrated: a quarter of the way, no more.
+            State::AssumedKnown => 0.25,
+            State::Known => 0.5,
+            State::Learning | State::Review => 0.0,
+        };
+        let stability = self
+            .cards
+            .get(&sense.id)
+            .and_then(|c| c.memory)
+            .map_or(0.0, |m| m.stability);
+        // Stability grows geometrically, so a linear bar would sit near zero
+        // for the first several reviews. The log keeps it moving.
+        let earned = if stability <= 0.0 {
+            0.0
+        } else {
+            (stability.ln() / MASTERED_STABILITY.ln()).clamp(0.0, 1.0)
+        };
+        earned.max(floor).clamp(0.0, 1.0)
+    }
+
+    /// The state of one item from its id and rank alone.
+    ///
+    /// [`Self::state`] needs a whole [`Sense`], which means decoding its
+    /// definition and example. The map paints a hundred squares a frame and
+    /// needs none of that text.
+    pub fn state_at(&self, sense: SenseId, rank: u32) -> State {
+        match self.cards.get(&sense) {
+            Some(card) => card.state,
+            None if rank > 0 && rank <= self.assumed_below => State::AssumedKnown,
+            None => State::Unexplored,
+        }
+    }
+
     pub fn card(&self, sense: SenseId) -> Option<&Card> {
         self.cards.get(&sense)
     }
@@ -339,6 +577,25 @@ impl Progress {
             ra.total_cmp(&rb).then(a.cmp(b))
         });
         due
+    }
+
+    /// Is a study nudge due? (spec 3.6)
+    ///
+    /// Two guards beyond the interval: nothing is sent when the queue is empty,
+    /// because a notification with nothing behind it is the fastest way to have
+    /// notifications turned off; and studying counts as a nudge answered, so
+    /// finishing a session buys a full interval of quiet.
+    pub fn reminder_due(&self, now: i64, waiting: usize) -> bool {
+        let Some(every) = self.reminders.every_hours() else {
+            return false;
+        };
+        waiting > 0 && now.saturating_sub(self.last_reminded) >= every * 3_600
+    }
+
+    /// Restarts the reminder interval — after a nudge, or after studying.
+    pub fn mark_reminded(&mut self, now: i64) {
+        self.last_reminded = now;
+        self.rev += 1;
     }
 
     /// Spec 3.6: once the backlog is this deep, stop feeding new items.
@@ -374,12 +631,7 @@ impl Progress {
     pub fn tally(&self, ranks: impl Iterator<Item = (SenseId, u32)>) -> [u32; 6] {
         let mut out = [0u32; 6];
         for (id, rank) in ranks {
-            let state = match self.cards.get(&id) {
-                Some(card) => card.state,
-                None if rank > 0 && rank <= self.assumed_below => State::AssumedKnown,
-                None => State::Unexplored,
-            };
-            out[state as usize] += 1;
+            out[self.state_at(id, rank) as usize] += 1;
         }
         out
     }
@@ -578,24 +830,28 @@ impl Progress {
         self.rev += 1;
     }
 
-    pub fn set_theme(&mut self, theme: Theme) {
-        self.theme = theme;
-        self.settings_changed();
-    }
-
-    pub fn set_daily_goal(&mut self, goal: u32) {
-        self.daily_goal = goal;
-        self.settings_changed();
-    }
-
-    pub fn set_retention(&mut self, retention: f32) {
-        self.retention = retention;
-        self.settings_changed();
-    }
-
-    fn settings_changed(&mut self) {
+    /// Changes settings — the theme, the daily goal, the accent and the rest —
+    /// and stamps the change, so sync carries it to other devices.
+    pub fn change_settings(&mut self, change: impl FnOnce(&mut Self)) {
+        change(self);
         self.settings_changed = now();
         self.rev += 1;
+    }
+
+    /// Copies every setting, and when they changed, from `other`.
+    fn copy_settings(&mut self, other: &Progress) {
+        self.daily_goal = other.daily_goal;
+        self.retention = other.retention;
+        self.theme = other.theme;
+        self.accent = other.accent;
+        self.casing = other.casing;
+        self.challenges = other.challenges;
+        self.show_examples = other.show_examples;
+        self.auto_pronounce = other.auto_pronounce;
+        self.streak_alerts = other.streak_alerts;
+        self.hard_word_alert = other.hard_word_alert;
+        self.reminders = other.reminders;
+        self.settings_changed = other.settings_changed;
     }
 
     /// "Erase progress": back to a fresh start, and a mark that tells sync to
@@ -661,6 +917,7 @@ impl Progress {
     /// - a card: the later-changed copy; an Undo that took one away wins over
     ///   any copy older than the Undo
     /// - placement, and the settings: whichever side set them last
+    /// - the last study reminder: the later one
     /// - the streak: whichever side studied last
     /// - today's counters: the later day, or the higher count on the same day,
     ///   so a daily limit used up on one device is used up on all
@@ -713,10 +970,12 @@ impl Progress {
             changed = true;
         }
         if theirs.settings_changed > self.settings_changed {
-            self.daily_goal = theirs.daily_goal;
-            self.retention = theirs.retention;
-            self.theme = theirs.theme;
-            self.settings_changed = theirs.settings_changed;
+            self.copy_settings(&theirs);
+            changed = true;
+        }
+        // A nudge on one device is a nudge on all.
+        if theirs.last_reminded > self.last_reminded {
+            self.last_reminded = theirs.last_reminded;
             changed = true;
         }
         // By who studied last rather than by stamp: opening a long-idle device
@@ -772,10 +1031,7 @@ impl Progress {
             self.placement_changed = 0;
         }
         if self.settings_changed < reset {
-            self.daily_goal = fresh.daily_goal;
-            self.retention = fresh.retention;
-            self.theme = fresh.theme;
-            self.settings_changed = 0;
+            self.copy_settings(&fresh);
         }
         if self.streak_changed < reset {
             self.streak = 0;
@@ -1100,6 +1356,213 @@ mod tests {
     }
 
     #[test]
+    fn reminders_respect_the_chosen_interval() {
+        let mut p = Progress {
+            reminders: Reminders::EveryFourHours,
+            ..Progress::default()
+        };
+        p.mark_reminded(0);
+        let hour = 3_600;
+
+        assert!(!p.reminder_due(3 * hour, 5), "fired early");
+        assert!(p.reminder_due(4 * hour, 5), "did not fire on time");
+        assert!(p.reminder_due(40 * hour, 5), "did not fire late");
+
+        // A nudge restarts the interval, so one interval means one nudge.
+        p.mark_reminded(4 * hour);
+        assert!(!p.reminder_due(5 * hour, 5));
+        assert!(p.reminder_due(8 * hour, 5));
+    }
+
+    #[test]
+    fn reminders_stay_quiet_with_nothing_to_study() {
+        // A notification with nothing behind it is how notifications get
+        // switched off for good.
+        let mut p = Progress {
+            reminders: Reminders::Daily,
+            ..Progress::default()
+        };
+        p.mark_reminded(0);
+        assert!(
+            !p.reminder_due(100 * 3_600, 0),
+            "nagged about an empty queue"
+        );
+        assert!(p.reminder_due(100 * 3_600, 1));
+    }
+
+    #[test]
+    fn reminders_off_means_off() {
+        let mut p = Progress {
+            reminders: Reminders::Off,
+            ..Progress::default()
+        };
+        p.mark_reminded(0);
+        assert_eq!(Reminders::Off.every_hours(), None);
+        assert!(!p.reminder_due(10_000 * 3_600, 99));
+    }
+
+    #[test]
+    fn every_reminder_rate_is_distinct_and_named() {
+        let mut seen = std::collections::BTreeSet::new();
+        for rate in Reminders::ALL {
+            assert!(!rate.label().is_empty());
+            assert!(
+                seen.insert(rate.every_hours()),
+                "{rate:?} duplicates another"
+            );
+        }
+        // Longer settings really are longer.
+        let hours: Vec<_> = Reminders::ALL
+            .iter()
+            .filter_map(|r| r.every_hours())
+            .collect();
+        assert!(
+            hours.windows(2).all(|w| w[0] < w[1]),
+            "{hours:?} not ascending"
+        );
+    }
+
+    #[test]
+    fn studying_buys_a_full_interval_of_quiet() {
+        let dict = Dict::load();
+        let mut p = Progress {
+            reminders: Reminders::EveryFourHours,
+            ..Progress::default()
+        };
+        let hour = 3_600;
+        p.mark_reminded(0);
+        assert!(p.reminder_due(5 * hour, 3));
+
+        // Finishing a session marks the nudge answered.
+        let s = sense(&dict, 900);
+        p.start_learning(s.id, Source::Manual, 5);
+        p.mark_reminded(5 * hour);
+        assert!(!p.reminder_due(6 * hour, 3));
+    }
+
+    #[test]
+    fn mastery_rises_with_right_answers_and_falls_with_wrong() {
+        let dict = Dict::load();
+        let mut p = Progress::default();
+        let s = sense(&dict, 1_500);
+        assert_eq!(p.mastery(&s), 0.0, "an untouched item is at zero");
+
+        p.start_learning(s.id, Source::Manual, 0);
+        let mut day = 0;
+        let mut climbing = vec![p.mastery(&s)];
+        for _ in 0..8 {
+            p.answer(s.id, right(2), day);
+            day = p.card(s.id).unwrap().due;
+            climbing.push(p.mastery(&s));
+        }
+        assert!(
+            climbing.windows(2).all(|w| w[1] >= w[0]),
+            "mastery fell on a right answer: {climbing:?}"
+        );
+        let peak = p.mastery(&s);
+        assert!(peak > 0.5, "eight right answers only reached {peak}");
+
+        // And a wrong one takes it back down.
+        p.answer(s.id, wrong(), day);
+        assert!(p.mastery(&s) < peak, "mastery held after a wrong answer");
+    }
+
+    #[test]
+    fn mastery_stays_inside_its_range() {
+        let dict = Dict::load();
+        let mut p = Progress::default();
+        let s = sense(&dict, 2_200);
+        p.start_learning(s.id, Source::Manual, 0);
+        let mut day = 0;
+        for i in 0..60 {
+            let outcome = if i % 5 == 0 { wrong() } else { right(3) };
+            p.answer(s.id, outcome, day);
+            day = p.card(s.id).unwrap().due;
+            let m = p.mastery(&s);
+            assert!((0.0..=1.0).contains(&m), "mastery {m} at step {i}");
+        }
+    }
+
+    #[test]
+    fn inferred_knowledge_is_not_full_mastery() {
+        // Spec 0.2 keeps Assumed_Known soft; the meter has to show that.
+        let dict = Dict::load();
+        let mut p = Progress::default();
+        p.apply_placement(3_000, 8.0);
+        let assumed = sense(&dict, 500);
+        assert_eq!(p.state(&assumed), State::AssumedKnown);
+        let m = p.mastery(&assumed);
+        assert!((0.0..0.5).contains(&m), "assumed-known sat at {m}");
+    }
+
+    #[test]
+    fn casing_reshapes_a_headword() {
+        assert_eq!(Casing::Sentence.apply("popular"), "Popular");
+        assert_eq!(Casing::Lower.apply("Popular"), "popular");
+        assert_eq!(Casing::Upper.apply("popular"), "POPULAR");
+        // Multi-word and accented headwords survive intact.
+        assert_eq!(Casing::Sentence.apply("a bit"), "A bit");
+        assert_eq!(Casing::Sentence.apply(""), "");
+        assert_eq!(Casing::Upper.apply("café"), "CAFÉ");
+    }
+
+    #[test]
+    fn each_accent_names_a_voice() {
+        assert_eq!(Accent::Uk.tag(), "en-GB");
+        assert_eq!(Accent::Us.tag(), "en-US");
+        let tags: BTreeSet<_> = Accent::ALL.iter().map(|a| a.tag()).collect();
+        assert_eq!(tags.len(), Accent::ALL.len());
+    }
+
+    #[test]
+    fn challenges_step_down_to_what_is_allowed() {
+        let all = Challenges::default();
+        assert_eq!(all.level_for(3), 3);
+        assert_eq!(all.level_for(1), 1);
+
+        // Typing switched off: a card that has earned level 3 is asked at 2.
+        let no_typing = Challenges {
+            produce: false,
+            ..all
+        };
+        assert_eq!(no_typing.level_for(3), 2);
+        assert_eq!(no_typing.level_for(2), 2);
+
+        // Only recall left: everything is asked at 2, including level 1 cards,
+        // because there is nothing lower to fall back to.
+        let recall_only = Challenges {
+            recognise: false,
+            recall: true,
+            produce: false,
+        };
+        assert_eq!(recall_only.level_for(3), 2);
+        assert_eq!(recall_only.level_for(1), 2);
+    }
+
+    #[test]
+    fn there_is_always_something_to_ask() {
+        // Even a nonsense setting has to yield a level a session can use.
+        for recognise in [true, false] {
+            for recall in [true, false] {
+                for produce in [true, false] {
+                    let c = Challenges {
+                        recognise,
+                        recall,
+                        produce,
+                    };
+                    for earned in 0..=4 {
+                        let level = c.level_for(earned);
+                        assert!((1..=3).contains(&level), "{c:?} at {earned} gave {level}");
+                        if c.count() > 0 {
+                            assert!(c.allows(level), "{c:?} gave a level it forbids");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn progress_survives_a_round_trip() {
         let dict = Dict::load();
         let mut p = Progress::default();
@@ -1109,9 +1572,25 @@ mod tests {
         p.answer(s.id, right(2), 42);
         p.note_lookup(s.word, &[]);
 
+        p.reminders = Reminders::EveryEightHours;
+        p.mark_reminded(1_700_000_000);
+        p.accent = Accent::Uk;
+        p.casing = Casing::Upper;
+        p.challenges = Challenges {
+            produce: false,
+            ..Challenges::default()
+        };
+        p.show_examples = false;
+
         let text = ron::to_string(&p).expect("serialises");
         let back: Progress = ron::from_str(&text).expect("deserialises");
         assert_eq!(back.assumed_below, 2_500);
+        assert_eq!(back.reminders, Reminders::EveryEightHours);
+        assert_eq!(back.last_reminded, 1_700_000_000);
+        assert_eq!(back.accent, Accent::Uk);
+        assert_eq!(back.casing, Casing::Upper);
+        assert!(!back.challenges.produce);
+        assert!(!back.show_examples);
         assert_eq!(back.state(&s), p.state(&s));
         assert_eq!(back.card(s.id).unwrap().reps, 1);
         assert!(back.lookups.contains(&s.word));
@@ -1182,7 +1661,11 @@ mod tests {
         stamp(&mut b, 10, 4_000);
         a.start_learning(40, Source::Study, 101);
         b.set_state(41, State::Known, Source::Manual, 101);
-        b.set_theme(Theme::Dark);
+        b.change_settings(|p| {
+            p.theme = Theme::Dark;
+            p.accent = Accent::Uk;
+        });
+        a.mark_reminded(1_000);
         a.mark_active(101);
         b.scanned_today = 6;
         a.note_lookup(3, &[]);
@@ -1223,7 +1706,10 @@ mod tests {
     #[test]
     fn erasing_progress_reaches_other_devices() {
         let (mut phone, mut laptop) = two_devices();
-        laptop.set_theme(Theme::Dark);
+        laptop.change_settings(|p| {
+            p.theme = Theme::Dark;
+            p.challenges.produce = false;
+        });
         later();
         phone.erase(101);
 
@@ -1231,6 +1717,7 @@ mod tests {
         assert!(laptop.card(10).is_none() && laptop.card(11).is_none());
         assert!(!laptop.placement_done);
         assert_eq!(laptop.theme, Theme::Light);
+        assert_eq!(laptop.challenges, Challenges::default());
 
         // What the laptop does after the erase is kept.
         laptop.start_learning(60, Source::Manual, 101);
@@ -1294,6 +1781,34 @@ mod tests {
         laptop.merge(&phone);
         assert_eq!(laptop.streak, 11);
         assert_eq!(laptop.last_active, 100);
+    }
+
+    #[test]
+    fn every_setting_travels_with_sync() {
+        let (mut phone, mut laptop) = two_devices();
+        phone.change_settings(|p| {
+            p.daily_goal = 20;
+            p.retention = 0.85;
+            p.accent = Accent::Uk;
+            p.casing = Casing::Upper;
+            p.challenges.recall = false;
+            p.show_examples = false;
+            p.auto_pronounce = true;
+            p.streak_alerts = false;
+            p.hard_word_alert = false;
+            p.reminders = Reminders::EveryEightHours;
+        });
+        phone.mark_reminded(5_000);
+        laptop.mark_reminded(4_000);
+
+        assert!(laptop.merge(&phone));
+        let mut expected = phone.clone();
+        expected.merge(&laptop);
+        assert_eq!(saved(&laptop), saved(&expected));
+        assert_eq!(laptop.accent, Accent::Uk);
+        assert_eq!(laptop.reminders, Reminders::EveryEightHours);
+        assert!(!laptop.challenges.recall);
+        assert_eq!(laptop.last_reminded, 5_000, "the later nudge");
     }
 
     #[test]

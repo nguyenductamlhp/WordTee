@@ -12,31 +12,53 @@ code runs as a native desktop binary, as an Android APK, and as WebAssembly in a
 browser.
 
 The interface is in English; the meanings are Vietnamese, which is what the
-dictionary holds. The bottom bar is four icons over captions — Study, Map,
-Look up, You — drawn rather than typed, for the reason in the next section.
+dictionary holds. The bottom bar is five icons over captions — Home, Study,
+Map, Look up, You — drawn rather than typed, for the reason below.
 
 ```
 ┌────────────────────────────────┐
 │ WordTee            10 due · 1d │
 ├────────────────────────────────┤
-│ swimming                       │
-├────────────────────────────────┤
-│ swim  /ˈswɪm/   inflected form │
-│ “swimming” is the present      │
-│ participle / gerund of this    │
+│         swimming               │
+│       /ˈswɪm.mɪŋ/              │
+│      n. · Advanced #5,105      │
 │ ────────────────────────────── │
-│ 1. [v.] Learning · Core #2,471 │
-│    Bơi, lội.                   │
-│    to swim across a river      │
+│    What does it mean?          │
+│                                │
+│ [ Tờ (giấy).        ] ← red    │
+│ [ Sự bơi.           ] ← green  │
+│ [ Trổ lá, ra lá.    ]          │
+│ [ Dở (sách).        ]          │
+│                                │
+│ [      Next word      ]        │
 ├────────────────────────────────┤
-│ [I know] [Quick test] [Learn]  │
-├────────────────────────────────┤
-│  cap    grid    lens    bust   │
-│ Study   Map   Look up   You    │
+│ home   cap   grid  lens  bust  │
+│ Home  Study  Map Look up  You  │
 └────────────────────────────────┘
 ```
 
 ## What it does
+
+**Home.** Where the app opens: one English word, four Vietnamese meanings, pick
+one. There is nothing to start and nothing to finish, which is the point — it
+is the lowest-friction way in. Answering moves the same FSRS card a study
+session would: a right answer lengthens the review interval and raises the
+word's mastery, a wrong one is a lapse that shortens it and drops mastery back.
+Mastery is not a separate score — it reads the card's own stability against
+spec 3.4's 60-day threshold, so it can never disagree with the schedule.
+
+The verdict is carried by the answer card's own background rather than by the
+colour of its text: a line of Vietnamese is being read, not watched for a change
+of hue. A wrong answer marks two cards — the chosen one red *and* the right one
+green — because marking only the mistake says what not to think without ever
+saying what to.
+
+What it asks about is not random either. Anything already due comes first, so
+the quick game doubles as review; only when nothing is waiting does it reach
+into the Smart Feeding window for new words. Two rules stop it circling: the
+last dozen headwords are off the table, and the winner is drawn at random from
+those that remain rather than being the head of a list rebuilt in the same
+order every round.
 
 **Search (spec 1.1).** Four match tiers, ranked by
 `tier → edit distance → personal boost → frequency`, never alphabetically:
@@ -60,11 +82,20 @@ diacritics searches the definitions instead (`quyết định` → decide, decis
 Worst case measured at 30 ms against the spec's 50 ms budget, and a keystroke
 while typing costs 6 ms — `cargo run --release --example bench` prints the lot.
 
-**The word page (spec 1.3, 1.4).** One card per sense, each with its own state,
-because spec 1.2 treats a *sense* as the unit of learning, not a word. Three
-buttons act on the sense you are looking at: **I know this**, **Quick test**
-and **Learn this**, each with a five-second Undo. Quick Test asks two questions,
-and the gap-fill never re-uses a sentence already on screen.
+**The word page (spec 1.3, 1.4).** Built as a card: space reserved for an
+illustration, then the headword, its phonetics, the Vietnamese meaning in the
+accent colour and an example under it. Two large actions close it — **Should
+Learn** and **Already Knew** — with Quick Test kept as a lighter third, because
+spec 1.4 asks for three but only two of them are the decision the reader came
+to make. Every sense carries its own state, since spec 1.2 makes a *sense* the
+unit of learning rather than a word, and "Learn more…" unfolds the word family
+and the phrases built on it.
+
+Nothing fills the illustration slot: images are V2 in the spec's own roadmap
+and no free source carries one per headword. The block is drawn at the size the
+real thing would take, so adding art later is a swap and not a re-layout — a
+neutral frame reads as "nothing here yet" where a stock photo would read as a
+wrong answer.
 
 **Placement (spec 2.2).** An adaptive test over a Rasch/IRT
 model rather than a binary search, because a binary search cannot recover from
@@ -81,20 +112,71 @@ scheduled by FSRS-5 with a retention target you can set between 0,8 and 0,95;
 you never grade yourself, the grade comes from how the exercise went. Exercises
 climb three levels as a card stabilises: recognise → recall → produce.
 
-**Map (spec 2.3).** 25 blocks of 1,000 items, each with the spec's four-colour
-bar. Inferred progress is hatched so it never reads as confirmed.
+**Map (spec 2.3).** Two views of the same thing. The grid is what the reference
+design shows and what the tab opens on: the word you are pointed at, a range
+picker, and a square per learning item — a hundred at a time, teal for known,
+purple for learning, a pale wash for unmet. Tapping a square moves the card;
+**Should Learn** and **Already Knew** act on it without leaving the screen. It
+opens at the range holding your frontier rather than at rank 1.
 
-**Icons.** The navigation bar's four icons are painted with egui's own shapes:
-a mortarboard, a grid of blocks that mirrors the knowledge map, a magnifier and
-a bust. Every character the bar tried before this came from a fallback font in a
+Behind the **Blocks** toggle is the overview spec 2.3 actually specifies: 25
+blocks of 1,000, each with the four-colour bar, inferred progress hatched so it
+never reads as confirmed. The grid answers "what is in front of me" and the
+overview answers "how far along am I"; neither answers the other, which is why
+both are kept.
+
+**Icons.** Painted with egui's own shapes rather than typed: a house, a
+mortarboard, a grid of blocks that mirrors the knowledge map, a magnifier, a
+bust, and the two speakers on the audio buttons — two waves for normal speed, one for slow. Every character the bar tried before this came from a fallback font in a
 different typeface, and the map glyph existed in only the crudest of them.
 Shapes take about as many lines, always match the text colour beside them, and
 cannot go missing. The caption under each is painted too, so it is one centred
 line at any width — the labels used to wrap and buckle the bar.
 
+**Colours.** Taken from the reference design and sampled from it rather than
+guessed: purple `#AE24F6` carries the brand, teal `#30BFD0` stands for *known*,
+and the page is a pale blue-grey under white cards, with ink that keeps a violet
+cast instead of going black.
+
+Those two brand values are **fills**. As text on white the teal reads at 2.2:1,
+well under the 4.5:1 small text needs, so every text colour is a darker member
+of the same family — and the big filled buttons pick their label by contrast, so
+"Should Learn" gets white and "Already Knew" gets ink. A test walks every text
+colour against both surfaces in both themes and fails under 4.5:1; another
+checks the filled buttons. Reaching for the bright colour because it matches the
+button is how a palette ends up unreadable, and that is the failure these are
+there to catch.
+
 **Themes.** Light by default, dark on request, switchable under **You →
 Settings** and saved with the rest of your progress. Colours are chosen per
-theme rather than shared: a blue legible on near-black washes out on white.
+theme rather than shared: a purple legible on near-black washes out on white.
+
+**Reminders (spec 3.6).** Off, every 4h, every 8h or once a day. An interval
+rather than a clock time, because `SystemTime` is UTC on every platform here and
+the app has no reliable local timezone — "every four hours" is a promise it can
+keep and "every day at 8pm" is not. Two guards make it bearable: nothing is sent
+when the queue is empty, and finishing a session buys a full interval of quiet.
+The browser can raise a real notification while the page is open; everywhere else
+it is an in-app message (see the gaps table).
+
+**Settings.** Grouped as in the reference design, and every row does something:
+
+| | |
+| --- | --- |
+| Sync | sign in with Google to carry progress and settings to your other devices ([Sync with Google](#sync-with-google)) |
+| Placement test | opens the CAT test; shows your frontier |
+| Accent | UK or US, which picks the speech voice |
+| New words a day, reminders, target retention | the spec's own knobs |
+| Streak alerts, hard-word alert | gate the two nudges |
+| Word examples, casing, pronounce on show | change what a card shows |
+| Challenge types | which of spec 3.3's three levels you will be asked |
+
+Challenge types is the one with teeth: switching off *produce* means a card
+that has earned level 3 is asked at level 2 instead, and the last one on cannot
+be cleared, or a session would have nothing to ask. Rows the reference has that
+nothing here backs — translate the interface, monthly email report, image style,
+vibration, video backgrounds, shake-to-report — are left out rather than shipped
+as switches that do nothing.
 
 ## The dictionary
 
@@ -227,6 +309,7 @@ these are the honest gaps:
 | 1.2 Phrasal verbs as their own entries | The source has 8.154 phrase entries (idioms, noun phrases) but is missing the common phrasal verbs — no `give up`, `look up`, `run out of`. Nothing to show. |
 | 1.4 On-device TTS | Web only, via the browser's speech synthesis. Desktop and Android would each need a platform binding; the IPA and examples are shown either way. |
 | 1.4 Audio packs, LRU cache, sync | No audio files ship, and there is no server. Progress is local, and syncs through your own Google Drive if you sign in ([Sync with Google](#sync-with-google)). |
+| 3.6 Push reminders | The setting and its schedule are real and tested, but delivery outside the app is browser-only and only while the page is open. A scheduled OS push needs a notification channel and an alarm on Android, and a launch agent on desktop; neither is in this build. |
 | 1.2 / 2.1 Sense ranking | The spec samples corpus sentences and has a model label each with a sense. No tagged corpus ships, so a headword's Zipf score is split across its senses as 1/(i+1) in dictionary order. Order *within* a headword is right; the split between headwords is an estimate. |
 | 2.1 Frequency formula | Spoken only (OpenSubtitles). COCA and BNC are commercial, so the 0,6/0,4 blend and Juilland's *D* dispersion cannot be computed from the aggregated counts available. |
 | 1.1 Double Metaphone | Folded into the edit-distance tier, which already covers both of the spec's own examples (`teh`, `fonetic`) at two edits. |
@@ -440,7 +523,7 @@ uses Android's built-in `NativeActivity`, which loads `libwordtee.so` and calls
 cargo run            # debug
 cargo run --release
 
-cargo test                              # 125 tests, no window, GPU or network needed
+cargo test                              # 162 tests, no window, GPU or network needed
 cargo run --release --example bench     # lookup latency vs. the spec's budget
 ```
 

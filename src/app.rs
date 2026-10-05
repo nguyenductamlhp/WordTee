@@ -36,7 +36,9 @@ const UNDO_SECONDS: f64 = 5.0;
 /// The four places you can be.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Tab {
+    /// Where the app opens: one word, four meanings, answer and move on.
     #[default]
+    Home,
     Lookup,
     Study,
     Map,
@@ -44,13 +46,19 @@ pub enum Tab {
 }
 
 impl Tab {
-    /// Left-to-right order in the bar. Look up sits third, next to the thumb;
-    /// it is still where the app opens, which [`Tab::default`] decides.
-    const ALL: [Self; 4] = [Self::Study, Self::Map, Self::Lookup, Self::Profile];
+    /// Left-to-right order in the bar.
+    const ALL: [Self; 5] = [
+        Self::Home,
+        Self::Study,
+        Self::Map,
+        Self::Lookup,
+        Self::Profile,
+    ];
 
     /// Shown on hover, since the bar itself is icons.
     fn label(self) -> &'static str {
         match self {
+            Self::Home => "Home",
             Self::Lookup => "Look up",
             Self::Study => "Study",
             Self::Map => "Map",
@@ -60,6 +68,7 @@ impl Tab {
 
     fn icon(self) -> ui::Icon {
         match self {
+            Self::Home => ui::Icon::Home,
             Self::Lookup => ui::Icon::Search,
             Self::Study => ui::Icon::Study,
             Self::Map => ui::Icon::Map,
@@ -124,6 +133,7 @@ pub struct WordTeeApp {
     shown: Shown,
     tab: Tab,
     toast: Option<Toast>,
+    home: ui::home::HomeState,
     lookup: ui::lookup::LookupState,
     study: ui::study::StudyState,
     map: ui::map::MapState,
@@ -144,6 +154,7 @@ impl Default for WordTeeApp {
             shown: Shown::default(),
             tab: Tab::default(),
             toast: None,
+            home: Default::default(),
             lookup: Default::default(),
             study: Default::default(),
             map: Default::default(),
@@ -171,6 +182,7 @@ impl WordTeeApp {
     /// up without an [`eframe::CreationContext`].
     pub fn configure_style(ctx: &egui::Context) {
         Self::install_font(ctx);
+        Self::paint_surfaces(ctx);
         Self::apply_theme(ctx, Theme::default());
         ctx.all_styles_mut(|style| {
             // The default sizes are tuned for a mouse pointer and read small
@@ -180,12 +192,6 @@ impl WordTeeApp {
             }
             style.spacing.button_padding = egui::vec2(10.0, 6.0);
             style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-            let accent = if style.visuals.dark_mode {
-                egui::Color32::from_rgb(0x4d, 0xb6, 0xf5)
-            } else {
-                egui::Color32::from_rgb(0x0b, 0x6f, 0xc2)
-            };
-            style.visuals.selection.bg_fill = accent.gamma_multiply(0.35);
         });
     }
 
@@ -195,6 +201,78 @@ impl WordTeeApp {
             Theme::Light => egui::ThemePreference::Light,
             Theme::Dark => egui::ThemePreference::Dark,
         });
+    }
+
+    /// Paints egui's own surfaces in the reference design's colours.
+    ///
+    /// The palette in `ui` covers what this app draws itself; this covers what
+    /// egui draws for it — panels, cards, text fields, buttons, selections. Set
+    /// once per theme rather than per frame, and per theme rather than shared,
+    /// since the two schemes disagree about nearly every value.
+    fn paint_surfaces(ctx: &egui::Context) {
+        use egui::Color32;
+
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let dark = theme == egui::Theme::Dark;
+            // Page, card, and the sunken well a text field sits in.
+            let (page, card, well) = if dark {
+                (
+                    Color32::from_rgb(0x17, 0x11, 0x1F),
+                    Color32::from_rgb(0x23, 0x1A, 0x2E),
+                    Color32::from_rgb(0x11, 0x0C, 0x17),
+                )
+            } else {
+                (
+                    Color32::from_rgb(0xEE, 0xF3, 0xF7),
+                    Color32::WHITE,
+                    Color32::WHITE,
+                )
+            };
+            // Body text keeps the brand's violet cast rather than going black.
+            let ink = if dark {
+                Color32::from_rgb(0xEC, 0xE4, 0xF2)
+            } else {
+                Color32::from_rgb(0x26, 0x00, 0x36)
+            };
+            let accent = if dark {
+                Color32::from_rgb(0xCB, 0x8B, 0xFF)
+            } else {
+                Color32::from_rgb(0xA7, 0x22, 0xEC)
+            };
+
+            ctx.style_mut_of(theme, |style| {
+                let v = &mut style.visuals;
+                v.panel_fill = page;
+                v.window_fill = card;
+                v.extreme_bg_color = well;
+                // `card` and the chip tints are built from this.
+                v.faint_bg_color = card;
+                v.override_text_color = Some(ink);
+                v.hyperlink_color = accent;
+                v.selection.bg_fill = accent.gamma_multiply(0.35);
+                v.selection.stroke.color = accent;
+
+                // Buttons: a quiet surface that lifts on hover, in the same
+                // family as the page rather than egui's neutral greys.
+                let widgets = &mut v.widgets;
+                widgets.noninteractive.bg_fill = card;
+                widgets.noninteractive.weak_bg_fill = card;
+                widgets.inactive.bg_fill = if dark {
+                    Color32::from_rgb(0x2E, 0x23, 0x3B)
+                } else {
+                    Color32::from_rgb(0xE4, 0xEA, 0xF2)
+                };
+                widgets.inactive.weak_bg_fill = widgets.inactive.bg_fill;
+                widgets.hovered.bg_fill = if dark {
+                    Color32::from_rgb(0x3D, 0x2E, 0x4E)
+                } else {
+                    Color32::from_rgb(0xD8, 0xE1, 0xEC)
+                };
+                widgets.hovered.weak_bg_fill = widgets.hovered.bg_fill;
+                widgets.active.bg_fill = accent.gamma_multiply(if dark { 0.5 } else { 0.25 });
+                widgets.active.weak_bg_fill = widgets.active.bg_fill;
+            });
+        }
     }
 
     /// Puts [`UI_FONT`] in front of the bundled fonts.
@@ -247,6 +325,7 @@ impl WordTeeApp {
             self.day = day;
             self.progress.roll_to(day);
             self.study.reset();
+            self.home.refresh();
         }
         self.google.update(ui.ctx(), &mut self.progress, now);
 
@@ -255,6 +334,21 @@ impl WordTeeApp {
         let wants_dark = self.progress.theme == Theme::Dark;
         if ui.visuals().dark_mode != wants_dark {
             Self::apply_theme(ui.ctx(), self.progress.theme);
+        }
+
+        // Spec 3.6's reminder, at whatever interval the user chose.
+        let (due, new, _) = self.study.pending(&self.dict, &self.progress, self.day);
+        let waiting = due + new;
+        let secs = progress::now_secs();
+        if self.progress.reminder_due(secs, waiting) {
+            self.progress.mark_reminded(secs);
+            let body = format!("{waiting} words are waiting.");
+            ui::notify("Time to study", &body);
+            self.toast = Some(Toast {
+                message: format!("Time to study — {body}"),
+                undo: None,
+                born: now,
+            });
         }
 
         let mut goto = None;
@@ -270,9 +364,9 @@ impl WordTeeApp {
                         let color = ui::good(ui);
                         ui::chip(ui, &format!("{}d streak", self.progress.streak), color);
                     }
-                    let (due, new, _) = self.study.pending(&self.dict, &self.progress, self.day);
-                    if due + new > 0 {
-                        ui::chip(ui, &format!("{} due", due + new), ui::warn(ui));
+                    if waiting > 0 {
+                        let color = ui::warn(ui);
+                        ui::chip(ui, &format!("{waiting} due"), color);
                     }
                 });
             });
@@ -296,6 +390,7 @@ impl WordTeeApp {
         };
 
         egui::CentralPanel::default().show(ui, |ui| match self.tab {
+            Tab::Home => ui::home::show(ui, &mut ctx, &mut self.home),
             Tab::Lookup => ui::lookup::show(ui, &mut ctx, &mut self.lookup),
             Tab::Study => ui::study::show(ui, &mut ctx, &mut self.study),
             Tab::Map => ui::map::show(ui, &mut ctx, &mut self.map),
@@ -541,6 +636,23 @@ mod tests {
                 if line.trim_start().starts_with("//") {
                     continue;
                 }
+                // `\u{2039}` is as much a drawn character as a pasted one, so
+                // the escapes are decoded rather than skipped over. Missing
+                // that is how an unrenderable glyph slips past this.
+                let mut rest = line;
+                while let Some(at) = rest.find("\\u{") {
+                    rest = &rest[at + 3..];
+                    if let Some(end) = rest.find('}')
+                        && let Ok(code) = u32::from_str_radix(&rest[..end], 16)
+                        && let Some(c) = char::from_u32(code)
+                    {
+                        if !c.is_ascii() {
+                            seen.insert(c);
+                        }
+                        rest = &rest[end..];
+                    }
+                }
+
                 let mut in_string = false;
                 let mut escaped = false;
                 for c in line.chars() {
@@ -591,15 +703,55 @@ mod tests {
     }
 
     #[test]
-    fn the_bar_runs_study_map_lookup_you() {
-        assert_eq!(Tab::ALL, [Tab::Study, Tab::Map, Tab::Lookup, Tab::Profile]);
-        // Reordering the bar must not change where the app opens.
-        assert_eq!(Tab::default(), Tab::Lookup);
-        assert_eq!(Harness::new().app.tab(), Tab::Lookup);
+    fn the_bar_runs_home_study_map_lookup_you() {
+        assert_eq!(
+            Tab::ALL,
+            [Tab::Home, Tab::Study, Tab::Map, Tab::Lookup, Tab::Profile]
+        );
+        // The app opens on Home.
+        assert_eq!(Tab::default(), Tab::Home);
+        assert_eq!(Harness::new().app.tab(), Tab::Home);
         // Every tab needs its own icon, or the bar is ambiguous.
         let icons: std::collections::BTreeSet<_> =
             Tab::ALL.iter().map(|t| format!("{:?}", t.icon())).collect();
         assert_eq!(icons.len(), Tab::ALL.len());
+    }
+
+    #[test]
+    fn home_is_what_the_app_opens_on_and_it_has_a_question() {
+        let mut h = Harness::new();
+        assert_eq!(h.app.tab(), Tab::Home);
+        h.settle();
+        // Nothing to set up and nothing due: a first-run user still gets asked
+        // something on the very first frame.
+        assert_eq!(h.app.home.answered(), (0, 0));
+    }
+
+    #[test]
+    fn answering_on_home_moves_mastery_and_the_streak() {
+        let mut h = Harness::new();
+        h.on(Tab::Home);
+        let sense = h.app.dict.at_rank(1_100).unwrap();
+        let before = h.app.progress.mastery(&sense);
+
+        h.app
+            .progress
+            .start_learning(sense.id, Source::Manual, h.app.day);
+        for _ in 0..3 {
+            let day = h.app.progress.card(sense.id).unwrap().due;
+            h.app.progress.answer(
+                sense.id,
+                crate::srs::Outcome {
+                    correct: true,
+                    hesitated: false,
+                    level: 1,
+                },
+                day,
+            );
+        }
+        let after = h.app.progress.mastery(&sense);
+        assert!(after > before, "{before} -> {after}");
+        h.settle();
     }
 
     #[test]
@@ -791,18 +943,30 @@ mod tests {
     }
 
     #[test]
-    fn the_map_renders_and_opens_a_block() {
+    fn the_map_renders_both_views() {
         let mut h = Harness::new();
         h.app.progress.apply_placement(4_500, 8.4);
         h.app
             .progress
             .start_learning(h.item(5_000), Source::Manual, h.app.day);
         h.on(Tab::Map);
-        // The overview, then a block drill-down.
-        h.app.map.open_block(3);
+        // The grid, at a few ranges, then the block overview behind the toggle.
+        for block in [0, 3, 24] {
+            h.app.map.open_block(block);
+            h.settle();
+        }
+        h.app.map.show_rank(12_345);
         h.settle();
-        h.app.map.open_block(24);
+    }
+
+    #[test]
+    fn the_map_opens_where_the_user_is_working() {
+        // Not at rank 1: the frontier is the part of the list that matters.
+        let mut h = Harness::new();
+        h.app.progress.apply_placement(4_500, 8.4);
+        h.on(Tab::Map);
         h.settle();
+        assert_eq!(h.app.map.range_start(), 4_501);
     }
 
     #[test]
