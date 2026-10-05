@@ -42,6 +42,39 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
     home(ui, ctx, state);
 }
 
+/// Starting levels, for a user who would rather pick one than take the test.
+fn level_picker(ui: &mut egui::Ui, ctx: &mut Ctx) {
+    let muted = ui::muted(ui);
+    ui.label(
+        RichText::new("OR START FROM A LEVEL")
+            .size(11.0)
+            .color(muted),
+    );
+    ui.add_space(2.0);
+    let current = ctx.progress.level();
+    for level in progress::LEVELS {
+        let chosen = current == Some(level);
+        let text = RichText::new(format!(
+            "{} \u{2014} from #{}",
+            level.label,
+            ui::thousands(level.from)
+        ))
+        .size(13.0);
+        if ui.radio(chosen, text).clicked() && !chosen {
+            ctx.progress.choose_level(level);
+            ctx.say(format!("New words now start at {}.", level.label));
+        }
+    }
+    ui.label(
+        RichText::new(format!(
+            "Words below your level still come up now and then — about 1 in {} new words.",
+            100 / crate::study::LOWER_LEVEL_PERCENT
+        ))
+        .size(11.5)
+        .color(muted),
+    );
+}
+
 /// Says where a reminder can actually be delivered on this platform.
 fn reminder_note(ui: &mut egui::Ui, ctx: &mut Ctx) {
     if ctx.progress.reminders == Reminders::Off {
@@ -98,6 +131,28 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                     .size(12.5)
                     .color(ui::muted(ui)),
                 );
+            } else if let Some(level) = ctx.progress.level() {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        RichText::new("Starting level:")
+                            .size(13.0)
+                            .color(ui::muted(ui)),
+                    );
+                    ui.label(
+                        RichText::new(level.label)
+                            .size(15.0)
+                            .strong()
+                            .color(ui::accent(ui)),
+                    );
+                });
+                ui.label(
+                    RichText::new(format!(
+                        "Learning from #{} onwards.",
+                        ui::thousands(ctx.progress.frontier)
+                    ))
+                    .size(12.5)
+                    .color(ui::muted(ui)),
+                );
             } else {
                 ui.label(
                     RichText::new("Placement test not taken yet.")
@@ -122,6 +177,9 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
                 .size(11.5)
                 .color(ui::muted(ui)),
             );
+
+            ui.add_space(8.0);
+            level_picker(ui, ctx);
         });
 
         // --- what has been learned ---
@@ -177,8 +235,8 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             } else {
                 "Not taken".to_owned()
             };
-            // Spec 2.2 is emphatic that self-assessment runs high, so there is
-            // no "pick your level" here — the test is the way in.
+            // Spec 2.2 is emphatic that self-assessment runs high, so the test
+            // stays the way in here; picking a level lives on the Level card.
             if ui::value_row(ui, ui::Icon::Letters, "Placement test", &level) {
                 state.test = Some(Placement::new(ctx.dict));
                 state.picked = None;
@@ -319,7 +377,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut ProfileState) {
             ui.add_space(6.0);
 
             // Spec 2.3, rule 3: the Skip Band.
-            if ctx.progress.placement_done {
+            if ctx.progress.has_level() {
                 ui.label(RichText::new("Skip a rank band").size(13.5).strong());
                 ui.horizontal_wrapped(|ui| {
                     for jump in [1_000u32, 3_000] {

@@ -73,8 +73,9 @@ impl StudyState {
         dict: &crate::dict::Dict,
         progress: &crate::progress::Progress,
         day: crate::progress::Day,
+        rng: &mut crate::rng::Rng,
     ) {
-        self.session = Some(Session::build(dict, progress, day));
+        self.session = Some(Session::build(dict, progress, day, rng));
         self.mode = Mode::Session;
         self.active = None;
     }
@@ -101,7 +102,9 @@ impl StudyState {
         {
             return counts;
         }
-        let counts = Session::build(dict, progress, day).counts();
+        // Any rng will do: it only picks which new slots dip below the
+        // frontier, and that never changes the counts.
+        let counts = Session::build(dict, progress, day, &mut crate::rng::Rng::seeded(0)).counts();
         self.pending.set(Some((rev, counts)));
         counts
     }
@@ -144,20 +147,20 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
         });
         ui.add_space(10.0);
 
-        if !ctx.progress.placement_done {
+        if !ctx.progress.has_level() {
             ui::card(ui, Some(ui::accent(ui)), |ui| {
                 ui.label(RichText::new("We don't know your level yet").strong());
                 ui.label(
                     RichText::new(
                         "Take the placement test (15–25 questions) so the app can \
                          find your vocabulary frontier and start feeding words at \
-                         the right level.",
+                         the right level — or pick a starting level yourself.",
                     )
                     .size(13.0)
                     .color(ui::muted(ui)),
                 );
                 ui.add_space(6.0);
-                if ui::wide_button(ui, "Take the placement test", ui::accent(ui)).clicked() {
+                if ui::wide_button(ui, "Test or choose a level", ui::accent(ui)).clicked() {
                     *ctx.goto = Some(crate::app::Tab::Profile);
                 }
             });
@@ -201,7 +204,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
             let enabled = due + new + checks > 0;
             ui.add_enabled_ui(enabled, |ui| {
                 if ui::wide_button(ui, "Start studying", ui::accent(ui)).clicked() {
-                    state.session = Some(Session::build(ctx.dict, ctx.progress, ctx.day));
+                    state.session = Some(Session::build(ctx.dict, ctx.progress, ctx.day, ctx.rng));
                     state.mode = Mode::Session;
                     state.active = None;
                     state.answered = 0;
@@ -244,7 +247,7 @@ fn home(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut StudyState) {
             });
             if ctx.progress.frontier <= 1 {
                 ui.label(
-                    RichText::new("Take the placement test first.")
+                    RichText::new("Take the placement test or choose a level first.")
                         .size(12.0)
                         .color(ui::muted(ui)),
                 );

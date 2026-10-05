@@ -26,6 +26,11 @@ const W_TOPIC: f32 = 0.0;
 const W_LOOKUP: f32 = 0.6;
 const W_FAMILY: f32 = 0.4;
 
+/// Chance, in percent, that a new-word slot goes to a word from below the
+/// frontier instead. Low on purpose: the level the user is at is the point,
+/// and these are a reminder that the easier words are not all known.
+pub const LOWER_LEVEL_PERCENT: usize = 10;
+
 /// One thing to do in a session.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Task {
@@ -177,29 +182,69 @@ pub fn suggest(dict: &Dict, progress: &Progress, count: usize) -> Vec<SenseId> {
     chosen.iter().map(|s| s.id).collect()
 }
 
+/// Smart Feeding, with the odd word from below the frontier mixed in.
+///
+/// Each slot [`suggest`] fills has a [`LOWER_LEVEL_PERCENT`] chance of going to
+/// a random word under the frontier — one the user chose to start above, or
+/// one the placement test assumed — so the levels below are not dropped for
+/// good. One for one: the count is whatever [`suggest`] found.
+pub fn feed(dict: &Dict, progress: &Progress, rng: &mut Rng, count: usize) -> Vec<SenseId> {
+    let mut picks: Vec<Sense> = suggest(dict, progress, count)
+        .into_iter()
+        .map(|id| dict.sense(id))
+        .collect();
+    for i in 0..picks.len() {
+        if rng.below(100) >= LOWER_LEVEL_PERCENT {
+            continue;
+        }
+        let others: Vec<Sense> = picks
+            .iter()
+            .enumerate()
+            .filter(|&(j, _)| j != i)
+            .map(|(_, s)| *s)
+            .collect();
+        if let Some(lower) = below_frontier(dict, progress, rng, |s| !interferes(dict, &others, s))
+        {
+            picks[i] = lower;
+        }
+    }
+    picks.iter().map(|s| s.id).collect()
+}
+
+/// One random untested item below the frontier that `fits`, if one turns up.
+///
+/// Untested means never confirmed either way: assumed known, or inside a band
+/// the user skipped or started above.
+fn below_frontier(
+    dict: &Dict,
+    progress: &Progress,
+    rng: &mut Rng,
+    fits: impl Fn(&Sense) -> bool,
+) -> Option<Sense> {
+    let ceiling = progress.frontier.saturating_sub(1).min(dict.learn_count());
+    if ceiling == 0 {
+        return None;
+    }
+    (0..60).find_map(|_| {
+        let sense = dict.at_rank(1 + rng.below(ceiling as usize) as u32)?;
+        let untested = matches!(
+            progress.state(&sense),
+            State::AssumedKnown | State::Unexplored
+        );
+        (sense.teachable() && untested && fits(&sense)).then_some(sense)
+    })
+}
+
 /// Random items from below the frontier, for Gap Filling (spec 2.2).
 ///
 /// These are the words a textbook learner is most likely to be missing:
 /// everyday vocabulary the placement test assumed they had.
 pub fn quick_scan(dict: &Dict, progress: &Progress, rng: &mut Rng, count: usize) -> Vec<SenseId> {
-    let ceiling = progress.frontier.saturating_sub(1).min(dict.learn_count());
-    if ceiling == 0 || count == 0 {
-        return Vec::new();
-    }
     let mut out: Vec<SenseId> = Vec::with_capacity(count);
-    for _ in 0..count * 60 {
-        if out.len() == count {
-            break;
-        }
-        let Some(sense) = dict.at_rank(1 + rng.below(ceiling as usize) as u32) else {
-            continue;
-        };
-        // Only things never confirmed either way: assumed known, or inside a
-        // band the user chose to skip.
-        let state = progress.state(&sense);
-        let untested = matches!(state, State::AssumedKnown | State::Unexplored);
-        if sense.teachable() && untested && !out.contains(&sense.id) {
-            out.push(sense.id);
+    while out.len() < count {
+        match below_frontier(dict, progress, rng, |s| !out.contains(&s.id)) {
+            Some(sense) => out.push(sense.id),
+            None => break,
         }
     }
     out
@@ -219,7 +264,10 @@ pub struct Session {
 impl Session {
     /// Builds the queue in the order spec 3.6 lays down: "thẻ ôn quá hạn (xếp
     /// theo khả năng nhớ thấp nhất trước) → LI mới → kiểm tra xác minh".
-    pub fn build(dict: &Dict, progress: &Progress, day: Day) -> Self {
+    ///
+    /// `rng` only decides which new slots go to a word below the frontier
+    /// (see [`feed`]); the counts come out the same whatever it says.
+    pub fn build(dict: &Dict, progress: &Progress, day: Day, rng: &mut Rng) -> Self {
         let mut tasks: Vec<Task> = progress
             .due_cards(day)
             .into_iter()
@@ -227,7 +275,7 @@ impl Session {
             .collect();
         let allowance = progress.new_allowance(day) as usize;
         tasks.extend(
-            suggest(dict, progress, allowance)
+            feed(dict, progress, rng, allowance)
                 .into_iter()
                 .map(Task::New),
         );
@@ -399,11 +447,14 @@ mod tests {
         let mut p = placed(1_000);
         p.daily_goal = 3;
         let day = 100;
-        let session = Session::build(&d, &p, day);
+        let session = Session::build(&d, &p, day, &mut Rng::seeded(1));
         assert_eq!(session.counts().1, 3);
 
         p.new_today = 3;
-        assert_eq!(Session::build(&d, &p, day).counts().1, 0);
+        assert_eq!(
+            Session::build(&d, &p, day, &mut Rng::seeded(1)).counts().1,
+            0
+        );
     }
 
     #[test]
@@ -429,7 +480,7 @@ mod tests {
         p.set_state(known.id, State::Known, Source::Manual, 0);
         p.new_today = 0;
 
-        let session = Session::build(&d, &p, day);
+        let session = Session::build(&d, &p, day, &mut Rng::seeded(1));
         let kinds: Vec<u8> = (0..session.total())
             .map(|i| match session.tasks[i] {
                 Task::Review(_) => 0,
@@ -451,7 +502,7 @@ mod tests {
     fn a_wrong_answer_puts_the_item_back_in_the_queue() {
         let d = dict();
         let p = placed(1_000);
-        let mut session = Session::build(&d, &p, 100);
+        let mut session = Session::build(&d, &p, 100, &mut Rng::seeded(1));
         let total = session.total();
         let first = session.current().unwrap();
         session.requeue();
@@ -478,6 +529,54 @@ mod tests {
         }
         let unique: std::collections::BTreeSet<_> = picks.iter().collect();
         assert_eq!(unique.len(), picks.len(), "duplicates in one scan");
+    }
+
+    #[test]
+    fn feeding_dips_below_the_level_now_and_then() {
+        let d = dict();
+        let mut p = Progress::default();
+        p.choose_level(crate::progress::LEVELS[2]);
+        let (mut lower, mut total) = (0, 0);
+        for seed in 0..40 {
+            let mut rng = Rng::seeded(seed);
+            for id in feed(&d, &p, &mut rng, 10) {
+                let s = d.sense(id);
+                total += 1;
+                if s.rank < p.frontier {
+                    lower += 1;
+                    assert!(s.teachable());
+                    assert_eq!(p.state(&s), State::Unexplored);
+                }
+            }
+        }
+        assert_eq!(total, 400, "the swap must be one for one");
+        // 10% expected; 400 draws keep a fair rng well inside this.
+        assert!(
+            (15..=70).contains(&lower),
+            "{lower} of {total} below the level"
+        );
+    }
+
+    #[test]
+    fn feeding_never_repeats_a_headword_after_the_dip() {
+        let d = dict();
+        let mut p = Progress::default();
+        p.choose_level(crate::progress::LEVELS[1]);
+        for seed in 0..30 {
+            let picks = feed(&d, &p, &mut Rng::seeded(seed), 20);
+            let mut words: Vec<_> = picks.iter().map(|&id| d.sense(id).word).collect();
+            words.sort_unstable();
+            words.dedup();
+            assert_eq!(words.len(), picks.len(), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn a_beginner_has_nothing_below_to_dip_into() {
+        let d = dict();
+        let p = Progress::default();
+        let picks = feed(&d, &p, &mut Rng::seeded(5), 10);
+        assert_eq!(picks, suggest(&d, &p, 10));
     }
 
     #[test]

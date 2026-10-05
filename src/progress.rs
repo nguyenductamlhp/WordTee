@@ -254,6 +254,39 @@ impl Theme {
     }
 }
 
+/// A starting point the user can pick instead of taking the placement test.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Level {
+    pub label: &'static str,
+    /// First rank taught at this level.
+    pub from: u32,
+}
+
+/// The levels on offer, easiest first. Named so as not to collide with the
+/// commonness bands (`Core`, `Advanced`, `Academic`) a word card shows.
+pub const LEVELS: [Level; 5] = [
+    Level {
+        label: "Beginner",
+        from: 1,
+    },
+    Level {
+        label: "Elementary",
+        from: 1_001,
+    },
+    Level {
+        label: "Intermediate",
+        from: 3_001,
+    },
+    Level {
+        label: "Upper-intermediate",
+        from: 6_001,
+    },
+    Level {
+        label: "Proficient",
+        from: 10_001,
+    },
+];
+
 /// Spec 0.2's six states.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub enum State {
@@ -393,7 +426,9 @@ pub struct Progress {
     /// units, kept up to date by later answers.
     pub theta: f32,
     pub placement_done: bool,
-    /// When any of the four placement fields above last changed.
+    /// The user picked a starting level rather than taking the test.
+    pub level_chosen: bool,
+    /// When any of the five placement fields above last changed.
     placement_changed: Stamp,
     /// New items per day, chosen at onboarding (spec 3.6).
     pub daily_goal: u32,
@@ -452,6 +487,7 @@ impl Default for Progress {
             // ln(3000): a mid-list starting guess until the test runs.
             theta: 8.0,
             placement_done: false,
+            level_chosen: false,
             placement_changed: 0,
             daily_goal: 10,
             retention: 0.9,
@@ -502,6 +538,23 @@ impl Progress {
             None if sense.rank > 0 && sense.rank <= self.assumed_below => State::AssumedKnown,
             None => State::Unexplored,
         }
+    }
+
+    /// Is there anything to feed from — a placement result or a chosen level?
+    pub fn has_level(&self) -> bool {
+        self.placement_done || self.level_chosen
+    }
+
+    /// The chosen level the frontier is in, if the user chose one.
+    pub fn level(&self) -> Option<Level> {
+        if !self.level_chosen {
+            return None;
+        }
+        LEVELS
+            .iter()
+            .rev()
+            .find(|l| l.from <= self.frontier)
+            .copied()
     }
 
     /// Changes whenever anything in here does. See the field's note.
@@ -809,7 +862,23 @@ impl Progress {
         self.frontier = frontier.saturating_add(1);
         self.theta = theta;
         self.placement_done = true;
+        self.level_chosen = false;
         self.placement_changed = now();
+    }
+
+    /// Starts feeding new items from `level` instead of from a test result.
+    ///
+    /// Nothing below it is assumed known: the range under it stays unexplored,
+    /// so Smart Feeding still dips into it now and then and Quick Scan offers
+    /// it. A level below an earlier test result also takes back that much of
+    /// the assumed-known range — choosing to start lower says those words are
+    /// not known after all.
+    pub fn choose_level(&mut self, level: Level) {
+        self.frontier = level.from.max(1);
+        self.assumed_below = self.assumed_below.min(self.frontier - 1);
+        self.level_chosen = true;
+        self.placement_changed = now();
+        self.rev += 1;
     }
 
     /// Spec 2.3, rule 1: the frontier advances once the next block is mostly
@@ -966,6 +1035,7 @@ impl Progress {
             self.frontier = theirs.frontier;
             self.theta = theirs.theta;
             self.placement_done = theirs.placement_done;
+            self.level_chosen = theirs.level_chosen;
             self.placement_changed = theirs.placement_changed;
             changed = true;
         }
@@ -1028,6 +1098,7 @@ impl Progress {
             self.frontier = fresh.frontier;
             self.theta = fresh.theta;
             self.placement_done = fresh.placement_done;
+            self.level_chosen = fresh.level_chosen;
             self.placement_changed = 0;
         }
         if self.settings_changed < reset {
@@ -1054,6 +1125,52 @@ mod tests {
 
     fn sense(dict: &Dict, rank: u32) -> Sense {
         dict.at_rank(rank).expect("rank in range")
+    }
+
+    #[test]
+    fn a_chosen_level_feeds_from_its_start_and_assumes_nothing() {
+        let d = Dict::load();
+        let mut p = Progress::default();
+        assert!(!p.has_level());
+        let intermediate = LEVELS[2];
+        p.choose_level(intermediate);
+        assert!(p.has_level());
+        assert_eq!(p.frontier, intermediate.from);
+        assert_eq!(p.level(), Some(intermediate));
+        // Below the level is skipped, not known.
+        assert_eq!(p.state(&sense(&d, 500)), State::Unexplored);
+    }
+
+    #[test]
+    fn choosing_a_level_below_a_test_result_takes_back_the_assumed_range() {
+        let d = Dict::load();
+        let mut p = Progress::default();
+        p.apply_placement(5_000, 8.5);
+        p.choose_level(LEVELS[1]);
+        assert_eq!(p.frontier, 1_001);
+        assert_eq!(p.assumed_below, 1_000);
+        assert_eq!(p.state(&sense(&d, 2_000)), State::Unexplored);
+        assert_eq!(p.state(&sense(&d, 900)), State::AssumedKnown);
+
+        // Above the result, the gap is a skipped band; the test still counts.
+        p.apply_placement(2_000, 7.6);
+        p.choose_level(LEVELS[4]);
+        assert_eq!(p.assumed_below, 2_000);
+        assert_eq!(p.state(&sense(&d, 1_500)), State::AssumedKnown);
+        assert_eq!(p.state(&sense(&d, 5_000)), State::Unexplored);
+    }
+
+    #[test]
+    fn a_test_result_replaces_a_chosen_level_and_sync_carries_either() {
+        let mut p = Progress::default();
+        p.choose_level(LEVELS[3]);
+        let mut other = Progress::default();
+        other.merge(&p);
+        assert_eq!(other.level(), Some(LEVELS[3]));
+
+        p.apply_placement(4_000, 8.3);
+        assert_eq!(p.level(), None);
+        assert!(p.has_level());
     }
 
     fn right(level: u8) -> Outcome {

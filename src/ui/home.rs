@@ -194,8 +194,13 @@ fn grade(ctx: &mut Ctx, question: &mut Question, picked: usize, now: f64) {
 
     let correct = picked == question.choice.answer;
     // Never seen before and answered right: the user knows it, so record that
-    // rather than starting them on a word they have just demonstrated.
-    if correct && ctx.progress.state(&sense) == State::Unexplored {
+    // rather than starting them on a word they have just demonstrated. That
+    // goes for a word from below the frontier that was only assumed known.
+    let untested = matches!(
+        ctx.progress.state(&sense),
+        State::Unexplored | State::AssumedKnown
+    );
+    if correct && untested {
         ctx.progress
             .set_state(sense.id, State::Known, Source::Test, ctx.day);
     }
@@ -279,7 +284,7 @@ fn candidates(ctx: &mut Ctx) -> Vec<SenseId> {
         return due;
     }
 
-    let mut out: Vec<SenseId> = study::suggest(ctx.dict, ctx.progress, FRESH)
+    let mut out: Vec<SenseId> = study::feed(ctx.dict, ctx.progress, ctx.rng, FRESH)
         .into_iter()
         .filter(|id| ctx.dict.sense(*id).teachable())
         .collect();

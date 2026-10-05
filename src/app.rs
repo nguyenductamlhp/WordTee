@@ -947,12 +947,16 @@ mod tests {
             if Some(&level) != levels.last() {
                 levels.push(level);
             }
-            h.app.study.begin_session(&h.app.dict, &h.app.progress, day);
+            h.app
+                .study
+                .begin_session(&h.app.dict, &h.app.progress, day, &mut h.app.rng);
             h.settle();
         }
         assert_eq!(levels, vec![1, 2, 3], "card did not climb the levels");
         assert_eq!(h.app.progress.cards().count(), 1);
-        assert!(Session::build(&h.app.dict, &h.app.progress, h.app.day).total() > 0);
+        assert!(
+            Session::build(&h.app.dict, &h.app.progress, h.app.day, &mut h.app.rng).total() > 0
+        );
     }
 
     #[test]
@@ -1042,7 +1046,7 @@ mod tests {
         h.app.progress.new_today = 5;
         h.app
             .study
-            .begin_session(&h.app.dict, &h.app.progress, h.app.day);
+            .begin_session(&h.app.dict, &h.app.progress, h.app.day, &mut h.app.rng);
 
         h.settle();
         assert_eq!(h.app.day, progress::today());

@@ -105,10 +105,20 @@ is not within two edits of any real one; claiming to know those is measured as a
 false-alarm rate and corrected for, and a user who guesses at everything gets no
 frontier at all.
 
+The test is the recommended way in, but not the only one: the same card under
+**You** lists five starting levels — Beginner (#1), Elementary (#1,001),
+Intermediate (#3,001), Upper-intermediate (#6,001) and Proficient (#10,001).
+Picking one moves the frontier there and assumes nothing below it, so the range
+underneath stays unexplored rather than counted as known. Picking a level below
+an earlier test result takes that much of the assumed-known range back.
+
 **Study (spec 2.3, 3.x).** Smart Feeding scores unexplored items in a
 500-wide window above the frontier by `RankScore × Relevance`, and a session
-never contains two senses of one word or a synonym/antonym pair. Reviews are
-scheduled by FSRS-5 with a retention target you can set between 0,8 and 0,95;
+never contains two senses of one word or a synonym/antonym pair. Each new-word
+slot has a 1-in-10 chance of going to a random word from below the frontier
+instead — under a chosen level, or assumed known by the test — so the easier
+levels keep turning up now and then; Home's quick game draws the same way.
+Reviews are scheduled by FSRS-5 with a retention target you can set between 0,8 and 0,95;
 you never grade yourself, the grade comes from how the exercise went. Exercises
 climb three levels as a card stabilises: recognise → recall → produce.
 
@@ -164,7 +174,7 @@ it is an in-app message (see the gaps table).
 | | |
 | --- | --- |
 | Sync | sign in with Google to carry progress and settings to your other devices ([Sync with Google](#sync-with-google)) |
-| Placement test | opens the CAT test; shows your frontier |
+| Placement test | opens the CAT test; shows your frontier. The Level card above also offers five starting levels to pick instead |
 | Accent | UK or US, which picks the speech voice |
 | New words a day, reminders, target retention | the spec's own knobs |
 | Streak alerts, hard-word alert | gate the two nudges |
