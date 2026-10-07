@@ -1,4 +1,4 @@
-//! The app shell: four tabs, the shared context they draw with, and the saved
+//! The app shell: five tabs, the shared context they draw with, and the saved
 //! progress underneath.
 
 use eframe::egui::{self, RichText};
@@ -26,6 +26,15 @@ static UI_FONT: &[u8] = include_bytes!(concat!(
     "/assets/fonts/NotoSans-Regular.ttf"
 ));
 
+/// The same face at weight 600, for headings, buttons and headwords.
+///
+/// egui has no font weights, and `RichText::strong` only changes the colour,
+/// so without a second file nothing in the app could be bold.
+static UI_FONT_SEMIBOLD: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/fonts/NotoSans-SemiBold.ttf"
+));
+
 /// Key the progress is stored under (eframe's storage: a file on desktop and
 /// Android, local storage in the browser).
 const STORAGE_KEY: &str = "wordtee.progress";
@@ -33,7 +42,7 @@ const STORAGE_KEY: &str = "wordtee.progress";
 /// Spec 1.4: how long the Undo offer stays on screen.
 const UNDO_SECONDS: f64 = 5.0;
 
-/// The four places you can be.
+/// The five places you can be.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Tab {
     /// Where the app opens: one word, four meanings, answer and move on.
@@ -55,7 +64,7 @@ impl Tab {
         Self::Profile,
     ];
 
-    /// Shown on hover, since the bar itself is icons.
+    /// The caption under the icon.
     fn label(self) -> &'static str {
         match self {
             Self::Home => "Home",
@@ -100,6 +109,10 @@ pub struct Ctx<'a> {
     pub goto: &'a mut Option<Tab>,
     /// Set to open a word on the lookup tab.
     pub open_word: &'a mut Option<WordId>,
+    /// Set to start today's session, from wherever the button was.
+    pub start_session: &'a mut bool,
+    /// `(due, new, checks)` waiting today, as the session would serve them.
+    pub pending: (usize, usize, usize),
     pub now: f64,
 }
 
@@ -193,18 +206,9 @@ impl WordTeeApp {
     /// The app's look and feel. Separate from [`Self::new`] so tests can set it
     /// up without an [`eframe::CreationContext`].
     pub fn configure_style(ctx: &egui::Context) {
-        Self::install_font(ctx);
-        Self::paint_surfaces(ctx);
+        Self::install_fonts(ctx);
+        ui::theme::apply(ctx);
         Self::apply_theme(ctx, Theme::default());
-        ctx.all_styles_mut(|style| {
-            // The default sizes are tuned for a mouse pointer and read small
-            // under a fingertip.
-            for font in style.text_styles.values_mut() {
-                font.size *= 1.15;
-            }
-            style.spacing.button_padding = egui::vec2(10.0, 6.0);
-            style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-        });
     }
 
     /// Switches the colour scheme.
@@ -215,102 +219,47 @@ impl WordTeeApp {
         });
     }
 
-    /// Paints egui's own surfaces in the reference design's colours.
+    /// Puts [`UI_FONT`] in front of the bundled fonts, and builds the
+    /// semibold family from [`UI_FONT_SEMIBOLD`].
     ///
-    /// The palette in `ui` covers what this app draws itself; this covers what
-    /// egui draws for it — panels, cards, text fields, buttons, selections. Set
-    /// once per theme rather than per frame, and per theme rather than shared,
-    /// since the two schemes disagree about nearly every value.
-    fn paint_surfaces(ctx: &egui::Context) {
-        use egui::Color32;
+    /// Noto goes first rather than last so that a Vietnamese word is drawn in
+    /// one typeface throughout — as a fallback it would only supply the
+    /// accented letters, and every word would be a mix of two fonts. The
+    /// semibold family falls back to the regular face, then to egui's own.
+    /// Monospace keeps Hack in front and takes Noto only as a fallback, so
+    /// columns still line up.
+    fn install_fonts(ctx: &egui::Context) {
+        use egui::{FontData, FontDefinitions, FontFamily};
+        use std::sync::Arc;
 
-        for theme in [egui::Theme::Light, egui::Theme::Dark] {
-            let dark = theme == egui::Theme::Dark;
-            // Page, card, and the sunken well a text field sits in.
-            let (page, card, well) = if dark {
-                (
-                    Color32::from_rgb(0x17, 0x11, 0x1F),
-                    Color32::from_rgb(0x23, 0x1A, 0x2E),
-                    Color32::from_rgb(0x11, 0x0C, 0x17),
-                )
-            } else {
-                (
-                    Color32::from_rgb(0xEE, 0xF3, 0xF7),
-                    Color32::WHITE,
-                    Color32::WHITE,
-                )
-            };
-            // Body text keeps the brand's violet cast rather than going black.
-            let ink = if dark {
-                Color32::from_rgb(0xEC, 0xE4, 0xF2)
-            } else {
-                Color32::from_rgb(0x26, 0x00, 0x36)
-            };
-            let accent = if dark {
-                Color32::from_rgb(0xCB, 0x8B, 0xFF)
-            } else {
-                Color32::from_rgb(0xA7, 0x22, 0xEC)
-            };
-
-            ctx.style_mut_of(theme, |style| {
-                let v = &mut style.visuals;
-                v.panel_fill = page;
-                v.window_fill = card;
-                v.extreme_bg_color = well;
-                // `card` and the chip tints are built from this.
-                v.faint_bg_color = card;
-                v.override_text_color = Some(ink);
-                v.hyperlink_color = accent;
-                v.selection.bg_fill = accent.gamma_multiply(0.35);
-                v.selection.stroke.color = accent;
-
-                // Buttons: a quiet surface that lifts on hover, in the same
-                // family as the page rather than egui's neutral greys.
-                let widgets = &mut v.widgets;
-                widgets.noninteractive.bg_fill = card;
-                widgets.noninteractive.weak_bg_fill = card;
-                widgets.inactive.bg_fill = if dark {
-                    Color32::from_rgb(0x2E, 0x23, 0x3B)
-                } else {
-                    Color32::from_rgb(0xE4, 0xEA, 0xF2)
-                };
-                widgets.inactive.weak_bg_fill = widgets.inactive.bg_fill;
-                widgets.hovered.bg_fill = if dark {
-                    Color32::from_rgb(0x3D, 0x2E, 0x4E)
-                } else {
-                    Color32::from_rgb(0xD8, 0xE1, 0xEC)
-                };
-                widgets.hovered.weak_bg_fill = widgets.hovered.bg_fill;
-                widgets.active.bg_fill = accent.gamma_multiply(if dark { 0.5 } else { 0.25 });
-                widgets.active.weak_bg_fill = widgets.active.bg_fill;
-            });
-        }
-    }
-
-    /// Puts [`UI_FONT`] in front of the bundled fonts.
-    ///
-    /// It goes first rather than last so that a Vietnamese word is drawn in one
-    /// typeface throughout — as a fallback it would only supply the accented
-    /// letters, and every word would be a mix of two fonts. The emoji fonts
-    /// stay behind it and still serve the tab bar icons. Monospace keeps Hack
-    /// in front and takes this only as a fallback, so columns still line up.
-    fn install_font(ctx: &egui::Context) {
-        use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
-
-        ctx.add_font(FontInsert::new(
-            "NotoSans",
-            egui::FontData::from_static(UI_FONT),
-            vec![
-                InsertFontFamily {
-                    family: egui::FontFamily::Proportional,
-                    priority: FontPriority::Highest,
-                },
-                InsertFontFamily {
-                    family: egui::FontFamily::Monospace,
-                    priority: FontPriority::Lowest,
-                },
-            ],
-        ));
+        let mut fonts = FontDefinitions::default();
+        fonts.font_data.insert(
+            "NotoSans".to_owned(),
+            Arc::new(FontData::from_static(UI_FONT)),
+        );
+        fonts.font_data.insert(
+            "NotoSans-SemiBold".to_owned(),
+            Arc::new(FontData::from_static(UI_FONT_SEMIBOLD)),
+        );
+        let defaults = fonts
+            .families
+            .get(&FontFamily::Proportional)
+            .cloned()
+            .unwrap_or_default();
+        let mut proportional = vec!["NotoSans".to_owned()];
+        proportional.extend(defaults.iter().cloned());
+        let mut semibold = vec!["NotoSans-SemiBold".to_owned(), "NotoSans".to_owned()];
+        semibold.extend(defaults);
+        fonts
+            .families
+            .insert(FontFamily::Proportional, proportional);
+        fonts.families.insert(ui::theme::semibold(), semibold);
+        fonts
+            .families
+            .entry(FontFamily::Monospace)
+            .or_default()
+            .push("NotoSans".to_owned());
+        ctx.set_fonts(fonts);
     }
 
     pub fn progress(&self) -> &Progress {
@@ -323,6 +272,17 @@ impl WordTeeApp {
 
     pub fn tab(&self) -> Tab {
         self.tab
+    }
+
+    /// Is a focused flow on screen — a session, a test — which hides the
+    /// tab bar so a stray tap cannot leave it halfway?
+    fn focused(&self) -> bool {
+        match self.tab {
+            Tab::Study => self.study.focused(),
+            Tab::Profile => self.profile.testing(),
+            Tab::Lookup => self.lookup.testing(),
+            Tab::Home | Tab::Map => false,
+        }
     }
 
     /// Draws one frame.
@@ -349,8 +309,8 @@ impl WordTeeApp {
         }
 
         // Spec 3.6's reminder, at whatever interval the user chose.
-        let (due, new, _) = self.study.pending(&self.dict, &self.progress, self.day);
-        let waiting = due + new;
+        let pending = self.study.pending(&self.dict, &self.progress, self.day);
+        let waiting = pending.0 + pending.1;
         let secs = progress::now_secs();
         if self.progress.reminder_due(secs, waiting) {
             self.progress.mark_reminded(secs);
@@ -375,27 +335,11 @@ impl WordTeeApp {
 
         let mut goto = None;
         let mut open_word = None;
+        let mut start_session = false;
 
-        egui::Panel::top("chrome").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(2.0);
-                ui.label(RichText::new(APP_NAME).strong().color(ui::accent(ui)));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(2.0);
-                    if self.progress.streak > 0 {
-                        let color = ui::good(ui);
-                        ui::chip(ui, &format!("{}d streak", self.progress.streak), color);
-                    }
-                    if waiting > 0 {
-                        let color = ui::warn(ui);
-                        ui::chip(ui, &format!("{waiting} due"), color);
-                    }
-                });
-            });
-            ui.add_space(2.0);
-        });
-
-        self.show_tab_bar(ui, &mut goto);
+        if !self.focused() {
+            self.show_tab_bar(ui, &mut goto);
+        }
         self.show_toast(ui, now);
 
         let mut ctx = Ctx {
@@ -408,18 +352,28 @@ impl WordTeeApp {
             toast: &mut self.toast,
             goto: &mut goto,
             open_word: &mut open_word,
+            start_session: &mut start_session,
+            pending,
             now,
         };
 
-        egui::CentralPanel::default().show(ui, |ui| match self.tab {
-            Tab::Home => ui::home::show(ui, &mut ctx, &mut self.home),
-            Tab::Lookup => ui::lookup::show(ui, &mut ctx, &mut self.lookup),
-            Tab::Study => ui::study::show(ui, &mut ctx, &mut self.study),
-            Tab::Map => ui::map::show(ui, &mut ctx, &mut self.map),
-            Tab::Profile => ui::profile::show(ui, &mut ctx, &mut self.profile),
-        });
+        // No margin: each screen draws its own header panel and gutter.
+        let page = egui::Frame::new().fill(ui.visuals().panel_fill);
+        egui::CentralPanel::default()
+            .frame(page)
+            .show(ui, |ui| match self.tab {
+                Tab::Home => ui::home::show(ui, &mut ctx, &mut self.home),
+                Tab::Lookup => ui::lookup::show(ui, &mut ctx, &mut self.lookup),
+                Tab::Study => ui::study::show(ui, &mut ctx, &mut self.study),
+                Tab::Map => ui::map::show(ui, &mut ctx, &mut self.map),
+                Tab::Profile => ui::profile::show(ui, &mut ctx, &mut self.profile),
+            });
 
-        if let Some(word) = open_word {
+        if start_session {
+            self.study
+                .begin_session(&self.dict, &self.progress, self.day, &mut self.rng);
+            self.tab = Tab::Study;
+        } else if let Some(word) = open_word {
             self.lookup.open(word);
             self.tab = Tab::Lookup;
         } else if let Some(tab) = goto {
@@ -429,9 +383,18 @@ impl WordTeeApp {
 
     /// The bottom navigation bar.
     fn show_tab_bar(&mut self, ui: &mut egui::Ui, goto: &mut Option<Tab>) {
-        egui::Panel::bottom("tabs").show(ui, |ui| {
-            ui.add_space(4.0);
+        let p = ui::palette(ui);
+        let frame = egui::Frame::new()
+            .fill(p.surface)
+            .inner_margin(egui::Margin {
+                left: 4,
+                right: 4,
+                top: 6,
+                bottom: 6,
+            });
+        egui::Panel::bottom("tabs").frame(frame).show(ui, |ui| {
             let current = self.tab;
+            ui.spacing_mut().item_spacing.x = 0.0;
             ui.columns(Tab::ALL.len(), |columns| {
                 for (column, tab) in columns.iter_mut().zip(Tab::ALL) {
                     if ui::tab_button(column, tab.icon(), current == tab, tab.label()).clicked() {
@@ -439,11 +402,13 @@ impl WordTeeApp {
                     }
                 }
             });
-            ui.add_space(4.0);
         });
     }
 
     /// The message strip, with the Undo button while it is still offered.
+    ///
+    /// Drawn inverted — dark on the light theme, light on the dark one — so
+    /// it reads as something passing over the screen rather than part of it.
     fn show_toast(&mut self, ui: &mut egui::Ui, now: f64) {
         let Some(toast) = &self.toast else { return };
         let age = now - toast.born;
@@ -456,24 +421,76 @@ impl WordTeeApp {
         let mut dismiss = false;
         let mut undo = false;
 
-        egui::Panel::bottom("toast").show(ui, |ui| {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(&message).size(13.0));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("×").clicked() {
-                        dismiss = true;
-                    }
-                    if undoable {
-                        let left = (UNDO_SECONDS - age).ceil() as u32;
-                        if ui.button(format!("Undo ({left}s)")).clicked() {
-                            undo = true;
-                        }
-                    }
-                });
+        let p = ui::palette(ui);
+        let (fill, ink, action) = if ui.visuals().dark_mode {
+            (p.ink, p.page, ui::theme::LIGHT.primary_ink)
+        } else {
+            (p.ink, p.page, ui::theme::DARK.primary_ink)
+        };
+        egui::Panel::bottom("toast")
+            .frame(
+                egui::Frame::new()
+                    .fill(p.page)
+                    .inner_margin(egui::Margin::symmetric(12, 8)),
+            )
+            .show_separator_line(false)
+            .show(ui, |ui| {
+                egui::Frame::new()
+                    .fill(fill)
+                    .corner_radius(14)
+                    .inner_margin(egui::Margin {
+                        left: 16,
+                        right: 4,
+                        top: 2,
+                        bottom: 2,
+                    })
+                    .show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        let width = ui.available_width();
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(width, ui::TOUCH),
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                let (close, response) = ui.allocate_exact_size(
+                                    egui::Vec2::splat(ui::TOUCH),
+                                    egui::Sense::click(),
+                                );
+                                ui::paint_icon(
+                                    ui.painter(),
+                                    egui::Rect::from_center_size(
+                                        close.center(),
+                                        egui::Vec2::splat(18.0),
+                                    ),
+                                    ui::Icon::Cross,
+                                    ink,
+                                    fill,
+                                );
+                                dismiss = response.on_hover_text("Dismiss").clicked();
+                                if undoable {
+                                    let left = (UNDO_SECONDS - age).ceil() as u32;
+                                    let label = RichText::new(format!("Undo ({left}s)"))
+                                        .size(ui::theme::size::LABEL)
+                                        .family(ui::theme::semibold())
+                                        .color(action);
+                                    undo = ui.add(egui::Button::new(label).frame(false)).clicked();
+                                }
+                                ui.with_layout(
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(&message)
+                                                    .size(ui::theme::size::LABEL)
+                                                    .color(ink),
+                                            )
+                                            .wrap(),
+                                        );
+                                    },
+                                );
+                            },
+                        );
+                    });
             });
-            ui.add_space(4.0);
-        });
 
         if undo {
             if let Some(toast) = self.toast.take()
@@ -737,12 +754,16 @@ mod tests {
     /// Read out of the source rather than listed by hand, so a new label is
     /// covered the moment it is written.
     fn characters_in_the_interface() -> std::collections::BTreeSet<char> {
-        const SOURCES: [&str; 9] = [
+        const SOURCES: [&str; 13] = [
             include_str!("app.rs"),
             include_str!("dict.rs"),
             include_str!("progress.rs"),
             include_str!("search.rs"),
             include_str!("ui/mod.rs"),
+            include_str!("ui/theme.rs"),
+            include_str!("ui/icons.rs"),
+            include_str!("ui/widgets.rs"),
+            include_str!("ui/home.rs"),
             include_str!("ui/lookup.rs"),
             include_str!("ui/study.rs"),
             include_str!("ui/map.rs"),
@@ -798,11 +819,15 @@ mod tests {
         // `←`, `→` and `✕` are in no bundled font, and the tab bar's emoji came
         // from a fallback in a different typeface. Everything the interface
         // draws now has to be in the one font.
-        let face = ttf_parser::Face::parse(UI_FONT, 0).expect("the bundled font parses");
-        let missing: Vec<char> = characters_in_the_interface()
-            .into_iter()
-            .filter(|c| face.glyph_index(*c).is_none())
-            .collect();
+        let mut missing: Vec<char> = Vec::new();
+        for font in [UI_FONT, UI_FONT_SEMIBOLD] {
+            let face = ttf_parser::Face::parse(font, 0).expect("the bundled font parses");
+            missing.extend(
+                characters_in_the_interface()
+                    .into_iter()
+                    .filter(|c| face.glyph_index(*c).is_none()),
+            );
+        }
         assert!(
             missing.is_empty(),
             "no glyph for {missing:?} — pick characters the bundled font has, \
@@ -976,6 +1001,7 @@ mod tests {
         let mut toast = None;
         let mut goto = None;
         let mut open_word = None;
+        let mut start_session = false;
         let mut shown = Shown::default();
         let mut ctx = Ctx {
             dict: &h.app.dict,
@@ -987,6 +1013,8 @@ mod tests {
             toast: &mut toast,
             goto: &mut goto,
             open_word: &mut open_word,
+            start_session: &mut start_session,
+            pending: (0, 0, 0),
             now: 0.0,
         };
         h.app.lookup.begin_quick_test(&mut ctx, &sense);

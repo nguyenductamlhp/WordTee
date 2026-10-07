@@ -17,20 +17,22 @@ Map, Look up, You — drawn rather than typed, for the reason below.
 
 ```
 ┌────────────────────────────────┐
-│ WordTee            10 due · 1d │
-├────────────────────────────────┤
-│         swimming               │
-│       /ˈswɪm.mɪŋ/              │
-│      n. · Advanced #5,105      │
-│ ────────────────────────────── │
-│    What does it mean?          │
-│                                │
-│ [ Tờ (giấy).        ] ← red    │
-│ [ Sự bơi.           ] ← green  │
-│ [ Trổ lá, ra lá.    ]          │
-│ [ Dở (sách).        ]          │
-│                                │
-│ [      Next word      ]        │
+│ Quick practice        ● 3 days │
+│ ┌────────────────────────────┐ │
+│ │ Today's session   [ Start ]│ │
+│ │ 6 reviews · 7 new waiting  │ │
+│ └────────────────────────────┘ │
+│           swimming             │
+│      /ˈswɪm.mɪŋ/  (◁) 0.75×    │
+│   noun · Advanced #5,105       │
+│ Pick the meaning               │
+│ [A  Tờ (giấy).          ✕ ]    │ ← red
+│ [B  Sự bơi.             ✓ ]    │ ← teal
+│ [C  Trổ lá, ra lá.        ]    │ ← faded
+│ [D  Dở (sách).            ]    │ ← faded
+│ ✕ Not quite. You'll see it     │
+│   again tomorrow.              │
+│ [         Next word         ]  │
 ├────────────────────────────────┤
 │ home   cap   grid  lens  bust  │
 │ Home  Study  Map Look up  You  │
@@ -49,9 +51,16 @@ spec 3.4's 60-day threshold, so it can never disagree with the schedule.
 
 The verdict is carried by the answer card's own background rather than by the
 colour of its text: a line of Vietnamese is being read, not watched for a change
-of hue. A wrong answer marks two cards — the chosen one red *and* the right one
-green — because marking only the mistake says what not to think without ever
-saying what to.
+of hue. Each marked card also carries a tick or a cross, so colour is never the
+only signal. A wrong answer marks two cards — the chosen one red *and* the right
+one teal — because marking only the mistake says what not to think without ever
+saying what to; the other two step back. A line under the options says when the
+word comes round again. Every multiple-choice question in the app — Home, a
+session, Quick Test — is drawn by the same widget, so they all answer the same
+way.
+
+Today's session sits in a strip above the word, one tap from starting, for when
+there is time for more than one question.
 
 What it asks about is not random either. Anything already due comes first, so
 the quick game doubles as review; only when nothing is waiting does it reach
@@ -82,20 +91,22 @@ diacritics searches the definitions instead (`quyết định` → decide, decis
 Worst case measured at 30 ms against the spec's 50 ms budget, and a keystroke
 while typing costs 6 ms — `cargo run --release --example bench` prints the lot.
 
-**The word page (spec 1.3, 1.4).** Built as a card: space reserved for an
-illustration, then the headword, its phonetics, the Vietnamese meaning in the
-accent colour and an example under it. Two large actions close it — **Should
-Learn** and **Already Knew** — with Quick Test kept as a lighter third, because
-spec 1.4 asks for three but only two of them are the decision the reader came
-to make. Every sense carries its own state, since spec 1.2 makes a *sense* the
-unit of learning rather than a word, and "Learn more…" unfolds the word family
-and the phrases built on it.
+**The word page (spec 1.3, 1.4).** Built as a card: the headword, its
+phonetics and chips, then the Vietnamese meaning in semibold and an example
+under it. Two large actions close it — **I know it** and **Learn it** — with
+Quick Test kept as a lighter third in the header, because spec 1.4 asks for
+three but only two of them are the decision the reader came to make. The same
+two buttons, under the same two names and in the same order, are the decision
+on the map, on a new card in a session and in Quick Scan. Every sense carries
+its own state, since spec 1.2 makes a *sense* the unit of learning rather than a
+word; the other meanings are listed under the card, and tapping one brings it
+into the card. "Word family & phrases" unfolds the word family and the phrases
+built on it.
 
-Nothing fills the illustration slot: images are V2 in the spec's own roadmap
-and no free source carries one per headword. The block is drawn at the size the
-real thing would take, so adding art later is a swap and not a re-layout — a
-neutral frame reads as "nothing here yet" where a stock photo would read as a
-wrong answer.
+No picture is shown: images are V2 in the spec's own roadmap and no free source
+carries one per headword. An empty frame was drawn where one would go, and it
+took a quarter of a phone screen to say "nothing here yet", pushing the meaning
+down; the page now leaves the space out until there is art to put in it.
 
 **Placement (spec 2.2).** An adaptive test over a Rasch/IRT
 model rather than a binary search, because a binary search cannot recover from
@@ -122,11 +133,21 @@ Reviews are scheduled by FSRS-5 with a retention target you can set between 0,8 
 you never grade yourself, the grade comes from how the exercise went. Exercises
 climb three levels as a card stabilises: recognise → recall → produce.
 
+A session is a focused flow: the tab bar steps aside, and a close button and a
+progress bar take the header. Every answer is shown before the next question —
+a sheet rises with the verdict, the right answer when it was wrong, and when the
+word comes back — and Continue moves on. The tab itself shows today's numbers as
+three tiles, the new-word goal as a bar, and the streak as the last seven days.
+The days are dots without weekday letters, because a day here is a UTC day and a
+Vietnamese morning is still yesterday in UTC.
+
 **Map (spec 2.3).** Two views of the same thing. The grid is what the reference
-design shows and what the tab opens on: the word you are pointed at, a range
-picker, and a square per learning item — a hundred at a time, teal for known,
-purple for learning, a pale wash for unmet. Tapping a square moves the card;
-**Should Learn** and **Already Knew** act on it without leaving the screen. It
+design shows and what the tab opens on: a range picker, a bar and counts for the
+range, and a square per learning item — a hundred at a time, teal for known,
+hatched teal for probably known, purple for learning, a pale wash for unmet. On
+a phone the squares go ten to a row, about 32 points each, so each one is a
+target a thumb can hit. Tapping a square moves the sheet under the grid to that
+word; **I know it** and **Learn it** act on it without leaving the screen. It
 opens at the range holding your frontier rather than at rank 1.
 
 Behind the **Blocks** toggle is the overview spec 2.3 actually specifies: 25
@@ -135,27 +156,39 @@ never reads as confirmed. The grid answers "what is in front of me" and the
 overview answers "how far along am I"; neither answers the other, which is why
 both are kept.
 
-**Icons.** Painted with egui's own shapes rather than typed: a house, a
-mortarboard, a grid of blocks that mirrors the knowledge map, a magnifier, a
-bust, and the two speakers on the audio buttons — two waves for normal speed, one for slow. Every character the bar tried before this came from a fallback font in a
-different typeface, and the map glyph existed in only the crudest of them.
-Shapes take about as many lines, always match the text colour beside them, and
-cannot go missing. The caption under each is painted too, so it is one centred
-line at any width — the labels used to wrap and buckle the bar.
+**Icons.** Painted with egui's own shapes rather than typed: outline icons on a
+24-unit grid at the weight of the text beside them — a house, a mortarboard, a
+grid of squares that mirrors the knowledge map, a magnifier, a bust, a speaker,
+and the logo's ball on its tee for the streak. Every character the bar tried
+before this came from a fallback font in a different typeface, and the map glyph
+existed in only the crudest of them. Shapes always match the text colour beside
+them and cannot go missing. The slow-speech button says **0.75×** in words: it
+used to be the same speaker with one wave instead of two, explained only by a
+tooltip a phone cannot show. Every tap target is at least 44 points.
 
-**Colours.** Taken from the reference design and sampled from it rather than
-guessed: purple `#AE24F6` carries the brand, teal `#30BFD0` stands for *known*,
-and the page is a pale blue-grey under white cards, with ink that keeps a violet
-cast instead of going black.
+**Colours.** Taken from the reference design: purple `#A722EC` is the one
+action colour — and, on purpose, the colour of *learning*, since pressing
+**Learn it** is what turns a square purple — teal `#30BFD0` stands for *known*,
+and the amber of the logo's ball `#F5B341` is the streak. The page is a pale
+violet-grey under white cards, with ink that keeps a violet cast instead of
+going black. Each colour has one job (`src/ui/theme.rs` lists them by role): the
+state colours are only ever states, so the commonness chip (Core, Advanced…) is
+neutral with a four-bar meter rather than teal or purple, and settings headings
+are ink rather than teal.
 
-Those two brand values are **fills**. As text on white the teal reads at 2.2:1,
-well under the 4.5:1 small text needs, so every text colour is a darker member
-of the same family — and the big filled buttons pick their label by contrast, so
-"Should Learn" gets white and "Already Knew" gets ink. A test walks every text
-colour against both surfaces in both themes and fails under 4.5:1; another
-checks the filled buttons. Reaching for the bright colour because it matches the
-button is how a palette ends up unreadable, and that is the failure these are
-there to catch.
+The bright values are **fills**. As text on white the teal reads at 2.2:1, well
+under the 4.5:1 small text needs, so every text colour is its own darker entry,
+and a chip is drawn in a pale wash with dark text — the state chips used to be
+written in the fill colour itself, which put "New" at 1.2:1. One test walks every
+text colour against the page and the card in both themes, and every wash against
+the text that goes on it; another reads every state chip. Reaching for the
+bright colour because it matches is how a palette ends up unreadable, and that
+is the failure these are there to catch.
+
+**Type.** Noto Sans in two weights, Regular and SemiBold, at six sizes — 34 for
+a headword, 22 for a screen's title, 17 for a heading, 16 for body text, 14 for
+labels, 13 for captions. egui has no font weights and `RichText::strong` only
+changes the colour, so before the second file nothing in the app could be bold.
 
 **Themes.** Light by default, dark on request, switchable under **You →
 Settings** and saved with the rest of your progress. Colours are chosen per
@@ -173,13 +206,18 @@ it is an in-app message (see the gaps table).
 
 | | |
 | --- | --- |
-| Sync | sign in with Google to carry progress and settings to your other devices ([Sync with Google](#sync-with-google)) |
-| Placement test | opens the CAT test; shows your frontier. The Level card above also offers five starting levels to pick instead |
+| Sync | the first row: sign in with Google to carry progress and settings to your other devices ([Sync with Google](#sync-with-google)) |
+| Level | the frontier on a track through the five levels; **Retake test** opens the CAT test, **Choose a level** lists the five starting levels |
 | Accent | UK or US, which picks the speech voice |
 | New words a day, reminders, target retention | the spec's own knobs |
 | Streak alerts, hard-word alert | gate the two nudges |
 | Word examples, casing, pronounce on show | change what a card shows |
 | Challenge types | which of spec 3.3's three levels you will be asked |
+
+A switch is a switch, and a choice of two or three is a segmented control;
+anything with more to it — reminder rates, challenge types, retention, jumping
+ahead, the credits — opens a page of its own, which keeps the tab to one screen
+of rows instead of a long scroll of everything at once.
 
 Challenge types is the one with teeth: switching off *produce* means a card
 that has earned level 3 is asked at level 2 instead, and the last one on cannot
@@ -198,14 +236,14 @@ into one file, `assets/wordtee.dict`:
 | [minhqnd/dictionary](https://github.com/minhqnd/dictionary) v2.0.0 (179 MB SQLite, from Wiktionary and TVTD) | headwords, senses, IPA, examples, synonyms | CC BY-SA |
 | [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) `en_50k` (OpenSubtitles) | frequency ranking | CC BY-SA |
 
-The app also bundles [Noto Sans](https://fonts.google.com/noto) (OFL 1.1, in
-`assets/fonts/`). egui's own font covers only 89% of what this app draws: it has
-neither the Vietnamese tone marks of Latin Extended Additional nor the IPA, so
-`ừ`, `ế`, `ə` and `ɪ` all rendered as empty boxes.
+The app also bundles [Noto Sans](https://fonts.google.com/noto), Regular and
+SemiBold (OFL 1.1, in `assets/fonts/`). egui's own font covers only 89% of what
+this app draws: it has neither the Vietnamese tone marks of Latin Extended
+Additional nor the IPA, so `ừ`, `ế`, `ə` and `ɪ` all rendered as empty boxes.
 
-**Everything the app draws comes from that one font**, and two tests hold the
-line — one over every character in the dictionary, one over the app's own
-labels, read straight out of the source. The second exists because the first
+**Everything the app draws comes from that one typeface**, and two tests hold
+the line — one over every character in the dictionary, one over the app's own
+labels in both weights, read straight out of the source. The second exists because the first
 was not enough: the back arrow `←`, the close `✕` and the tab bar's emoji are
 in no bundled font either, and the emoji that did resolve came from a fallback
 in a different typeface. They are all words or in-font characters now.
@@ -495,7 +533,7 @@ the better shape — ask and I can add that.
 | Path | What it is |
 | --- | --- |
 | `assets/wordtee.dict` | The dictionary, 19 MB, `include_bytes!`d into the binary |
-| `assets/fonts/` | Noto Sans, the one font that covers both Vietnamese and IPA |
+| `assets/fonts/` | Noto Sans, Regular and SemiBold: the one typeface that covers both Vietnamese and IPA |
 | `assets/logo.svg` | The logo; the launcher PNGs, `assets/icon.png` (desktop window) and the favicon are drawn from it |
 | `scripts/build-dict.py` | Builds that file from the two upstream sources |
 | `src/dict.rs` | Zero-copy reader for the pack |
@@ -508,7 +546,7 @@ the better shape — ask and I can add that.
 | `src/rng.rs` | A small PRNG, so `getrandom` is not in the way on wasm |
 | `src/app.rs` | The shell — tabs, toasts, saved progress — plus the UI tests |
 | `src/google/` | Google sign-in and Drive sync: the shared part in `mod.rs`, desktop and Android sign-in in `native.rs`, the browser's in `web.rs` |
-| `src/ui/` | The four screens |
+| `src/ui/` | The five screens, and `theme.rs` (colours by role, type scale), `widgets.rs` (the shared components) and `icons.rs` |
 | `examples/bench.rs` | Checks lookup against the spec's latency targets |
 | `src/main.rs` | `main`, for desktop and (compiled to wasm) for the browser |
 | `src/android.rs` | `android_main`, the entry point Android calls |

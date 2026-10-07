@@ -5,13 +5,14 @@
 //! nothing to finish: a question is always on screen, and answering it moves
 //! the same FSRS card a study session would. A right answer lengthens the
 //! interval and fills the mastery bar; a wrong one is a lapse, which shortens
-//! the interval and drops the bar back.
+//! the interval and drops the bar back. Today's session is one tap away above
+//! it, for when there is time for more.
 //!
 //! What it asks about is not random. Anything already due comes first, so the
 //! quick game doubles as review; only when nothing is waiting does it reach for
 //! new words from the Smart Feeding window (spec 2.3).
 
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, Align, Layout, Margin, RichText};
 
 use crate::app::Ctx;
 use std::collections::VecDeque;
@@ -21,7 +22,7 @@ use crate::progress::{Source, State};
 use crate::quiz::{self, Choice};
 use crate::srs::Outcome;
 use crate::study;
-use crate::ui;
+use crate::ui::{self, Icon, Kind, Tone, theme};
 
 /// Answering slower than this counts as hesitation (spec 3.2).
 const SLOW_SECONDS: f64 = 12.0;
@@ -31,29 +32,6 @@ const RECENT: usize = 12;
 /// How many fresh words to draw on when the due queue runs dry. Wide enough
 /// that the choice below has something to choose from.
 const FRESH: usize = 40;
-
-/// How one option is tinted once the question has been answered.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Mark {
-    /// Untouched — before the answer, and for the options not involved.
-    None,
-    Right,
-    Wrong,
-}
-
-/// Decides an option's tint.
-///
-/// A wrong answer marks two cards, not one: the chosen card in red *and* the
-/// right card in green. Marking only the mistake says what not to think
-/// without ever saying what to.
-fn mark_for(picked: Option<usize>, index: usize, answer: usize) -> Mark {
-    match picked {
-        None => Mark::None,
-        Some(_) if index == answer => Mark::Right,
-        Some(chosen) if chosen == index => Mark::Wrong,
-        Some(_) => Mark::None,
-    }
-}
 
 /// The question on screen.
 struct Question {
@@ -98,6 +76,13 @@ impl HomeState {
 }
 
 pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
+    let streak = ctx.progress.streak;
+    ui::screen_header(ui, "Quick practice", |ui| {
+        if streak > 0 {
+            ui::streak_pill(ui, streak);
+        }
+    });
+
     if state.question.is_none() {
         state.question = build(ctx, &state.recent);
     }
@@ -116,66 +101,90 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
     let word = ctx.dict.word(sense.word);
     let voice = ctx.progress.accent;
     let headword = ctx.progress.casing.apply(word.text);
+    let item_state = ctx.progress.state(&sense);
 
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.add_space(6.0);
-        score_line(ui, run);
-        ui.add_space(4.0);
+    ui::page(ui, "home", |ui| {
+        session_strip(ui, ctx);
 
         // --- the word ---
-        ui::card(ui, Some(ui::accent(ui)), |ui| {
+        ui::card(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(6.0);
-                ui.label(RichText::new(headword).size(34.0).strong());
-                ui.horizontal(|ui| {
-                    if !word.ipa.is_empty() {
-                        let color = ui::accent(ui);
-                        ui.label(RichText::new(word.ipa).size(15.0).color(color));
-                    }
-                    ui::speak_buttons(ui, word.text, voice);
-                });
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.y = 6.0;
+                ui.label(theme::display(&headword));
+                if !word.ipa.is_empty() || ui::can_speak() {
+                    ui::centered_row(ui, "ipa", |ui| {
+                        if !word.ipa.is_empty() {
+                            let ink2 = ui::palette(ui).ink2;
+                            ui.label(theme::body(word.ipa).color(ink2));
+                        }
+                        ui::speak_buttons(ui, word.text, voice);
+                    });
+                }
+                ui::centered_row(ui, "chips", |ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
                     ui::pos_chip(ui, sense.pos);
                     ui::band_chip(ui, sense.band(), sense.rank);
+                    if item_state != State::Unexplored {
+                        ui::state_chip(ui, item_state);
+                    }
                 });
-                ui.add_space(6.0);
             });
         });
 
-        ui.add_space(10.0);
-        let muted = ui::muted(ui);
-        ui.label(RichText::new("What does it mean?").size(13.0).color(muted));
-        ui.add_space(4.0);
-
         // --- the four meanings ---
+        ui.horizontal(|ui| {
+            let ink2 = ui::palette(ui).ink2;
+            ui.label(theme::label("Pick the meaning").color(ink2));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if run >= 3 {
+                    ui::chip(ui, &format!("{run} in a row"), Tone::Known);
+                }
+            });
+        });
+
         let answered = question.picked.is_some();
         let mut chose = None;
-        for (i, option) in question.choice.options.iter().enumerate() {
-            let tint = match mark_for(question.picked, i, question.choice.answer) {
-                Mark::Right => Some(ui::good(ui)),
-                Mark::Wrong => Some(ui::bad(ui)),
-                Mark::None => None,
-            };
-            if ui::choice_button(ui, option, tint).clicked() && !answered {
-                chose = Some(i);
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.y = 8.0;
+            for (i, option) in question.choice.options.iter().enumerate() {
+                let mark = ui::mark_for(question.picked, i, question.choice.answer);
+                if ui::answer_option(ui, i, option, mark).clicked() && !answered {
+                    chose = Some(i);
+                }
             }
-            ui.add_space(4.0);
+        });
+        // 1 to 4 on a keyboard, matching the A to D on the options.
+        if !answered {
+            let keys = [
+                egui::Key::Num1,
+                egui::Key::Num2,
+                egui::Key::Num3,
+                egui::Key::Num4,
+            ];
+            for (i, key) in keys.into_iter().enumerate() {
+                if i < question.choice.options.len() && ui.input(|input| input.key_pressed(key)) {
+                    chose = Some(i);
+                }
+            }
         }
         if let Some(i) = chose {
             grade(ctx, question, i, ctx.now);
         }
 
-        // --- move on ---
-        if question.picked.is_some() {
-            ui.add_space(12.0);
-            let accent = ui::accent(ui);
-            let next = ui::wide_button(ui, "Next word", accent);
-            if next.clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                finished = Some((sense.word, question.picked == Some(question.choice.answer)));
+        // --- the verdict, and moving on ---
+        if let Some(picked) = question.picked {
+            let right = picked == question.choice.answer;
+            let next = ui::when(
+                ctx.progress
+                    .card(sense.id)
+                    .map_or(0, |card| card.due - ctx.day),
+            );
+            verdict(ui, right, &next);
+            let go = ui::primary_button(ui, "Next word").clicked();
+            if go || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                finished = Some((sense.word, right));
             }
         }
-        ui.add_space(24.0);
     });
 
     if let Some((word, was_right)) = finished {
@@ -185,6 +194,80 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut HomeState) {
         state.run = if was_right { state.run + 1 } else { 0 };
         state.question = None;
     }
+}
+
+/// Today's session, one tap away: what is waiting and a Start button.
+fn session_strip(ui: &mut egui::Ui, ctx: &mut Ctx) {
+    let (due, new, checks) = ctx.pending;
+    if due + new + checks == 0 {
+        return;
+    }
+    let p = ui::palette(ui);
+    let mut parts = Vec::new();
+    if due > 0 {
+        parts.push(plural(due, "review", "reviews"));
+    }
+    if new > 0 {
+        parts.push(format!("{new} new"));
+    }
+    if checks > 0 {
+        parts.push(plural(checks, "check", "checks"));
+    }
+    ui::card_frame(ui)
+        .corner_radius(14)
+        .inner_margin(Margin {
+            left: 16,
+            right: 10,
+            top: 10,
+            bottom: 10,
+        })
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.label(theme::label("Today\u{2019}s session"));
+                    ui.label(
+                        theme::caption(format!("{} waiting", parts.join(" · "))).color(p.ink2),
+                    );
+                });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let start =
+                        ui::button(ui, Kind::Primary, None, "Start", egui::vec2(88.0, 44.0));
+                    if start.clicked() {
+                        *ctx.start_session = true;
+                    }
+                });
+            });
+        });
+}
+
+/// "1 review", "3 reviews".
+pub fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+/// One line saying how the answer went and when the word comes back.
+fn verdict(ui: &mut egui::Ui, right: bool, next: &str) {
+    let p = ui::palette(ui);
+    let (icon, color, text) = if right {
+        (
+            Icon::Check,
+            p.known_ink,
+            format!("Right \u{2014} next review {next}."),
+        )
+    } else {
+        (
+            Icon::Cross,
+            p.wrong_ink,
+            format!("Not quite. You\u{2019}ll see it again {next}."),
+        )
+    };
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::Vec2::splat(20.0), egui::Sense::hover());
+        ui::paint_icon(ui.painter(), rect, icon, color, p.page);
+        ui.add(egui::Label::new(theme::label(text).color(color)).wrap());
+    });
 }
 
 /// Applies the answer to the card, through the same path a session uses.
@@ -214,19 +297,6 @@ fn grade(ctx: &mut Ctx, question: &mut Question, picked: usize, now: f64) {
     ctx.progress.mark_active(ctx.day);
     // Practising here counts as answering the reminder (spec 3.6).
     ctx.progress.mark_reminded(crate::progress::now_secs());
-}
-
-/// A run of right answers, and nothing else. This is a warm-up, not a test,
-/// and a running score turns it into one.
-fn score_line(ui: &mut egui::Ui, run: u32) {
-    ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if run >= 3 {
-                let good = ui::good(ui);
-                ui::chip(ui, &format!("{run} in a row"), good);
-            }
-        });
-    });
 }
 
 /// Picks the next item: something due if there is one, otherwise a new word.
@@ -312,16 +382,18 @@ fn candidates(ctx: &mut Ctx) -> Vec<SenseId> {
 
 /// Only reachable if the dictionary could not build a single question.
 fn nothing_to_ask(ui: &mut egui::Ui, ctx: &mut Ctx) {
-    ui.add_space(30.0);
-    ui.vertical_centered(|ui| {
-        ui.label(RichText::new("Nothing to practise").size(18.0).strong());
-        ui.label(
-            RichText::new("Look a word up and add it, and it will show up here.")
-                .size(12.5)
-                .color(ui::muted(ui)),
-        );
-        ui.add_space(10.0);
-        if ui.button("Go to Look up").clicked() {
+    ui::page(ui, "home-empty", |ui| {
+        ui.add_space(24.0);
+        ui.vertical_centered(|ui| {
+            let ink2 = ui::palette(ui).ink2;
+            ui.label(theme::heading("Nothing to practise"));
+            ui.label(
+                RichText::new("Look a word up and add it, and it will show up here.")
+                    .size(theme::size::CAPTION)
+                    .color(ink2),
+            );
+        });
+        if ui::primary_button(ui, "Go to Look up").clicked() {
             *ctx.goto = Some(crate::app::Tab::Lookup);
         }
     });
@@ -345,6 +417,7 @@ mod tests {
         toast: Option<crate::app::Toast>,
         goto: Option<crate::app::Tab>,
         open_word: Option<WordId>,
+        start_session: bool,
     }
 
     impl Bench {
@@ -358,6 +431,7 @@ mod tests {
                 toast: None,
                 goto: None,
                 open_word: None,
+                start_session: false,
             }
         }
 
@@ -372,6 +446,8 @@ mod tests {
                 toast: &mut self.toast,
                 goto: &mut self.goto,
                 open_word: &mut self.open_word,
+                start_session: &mut self.start_session,
+                pending: (0, 0, 0),
                 now: 0.0,
             }
         }
@@ -464,33 +540,6 @@ mod tests {
                 !window.contains(word),
                 "{word} repeated within {RECENT}: {seen:?}"
             );
-        }
-    }
-
-    #[test]
-    fn nothing_is_marked_before_an_answer() {
-        for i in 0..OPTIONS {
-            assert_eq!(mark_for(None, i, 2), Mark::None);
-        }
-    }
-
-    #[test]
-    fn a_right_answer_marks_only_that_card() {
-        let answer = 2;
-        for i in 0..OPTIONS {
-            let expected = if i == answer { Mark::Right } else { Mark::None };
-            assert_eq!(mark_for(Some(answer), i, answer), expected, "option {i}");
-        }
-    }
-
-    #[test]
-    fn a_wrong_answer_marks_the_mistake_and_the_right_card() {
-        let (answer, chosen) = (2, 0);
-        assert_eq!(mark_for(Some(chosen), chosen, answer), Mark::Wrong);
-        assert_eq!(mark_for(Some(chosen), answer, answer), Mark::Right);
-        // The two untouched options stay plain.
-        for i in [1, 3] {
-            assert_eq!(mark_for(Some(chosen), i, answer), Mark::None, "option {i}");
         }
     }
 
