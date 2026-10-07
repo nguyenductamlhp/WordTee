@@ -62,6 +62,13 @@ services:
         WORDTEE_GOOGLE_DESKTOP_CLIENT_ID: ${WORDTEE_GOOGLE_DESKTOP_CLIENT_ID:-}
         WORDTEE_GOOGLE_DESKTOP_CLIENT_SECRET: ${WORDTEE_GOOGLE_DESKTOP_CLIENT_SECRET:-}
         WORDTEE_GOOGLE_WEB_CLIENT_ID: ${WORDTEE_GOOGLE_WEB_CLIENT_ID:-}
+        # The APK's signing key, so a newly built APK installs over the one
+        # already on the phone: the keystore base64-encoded on one line, and
+        # its password. Left empty, every build signs with a fresh key and
+        # updating means uninstalling first. See "Signing" in the README.
+        # Set these under Environment Variables too.
+        APK_KEYSTORE: ${APK_KEYSTORE:-}
+        APK_KEYSTORE_PASSWORD: ${APK_KEYSTORE_PASSWORD:-}
 
     # The login for the whole site; docker/40-basic-auth.sh turns it into
     # nginx's htpasswd file at startup.

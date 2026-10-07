@@ -308,8 +308,8 @@ progress on the device and the copy in Drive.
 
 On Android, the browser's last page has a **Back to WordTee** button. Google's
 own Android sign-in is not used: it needs Java and an OAuth client tied to the
-APK's signing key, and this app has neither (each Docker build signs with a
-fresh key).
+APK's signing key, and this app has neither (and unless `APK_KEYSTORE` is set,
+each Docker build signs with a fresh key).
 
 ### Setting it up
 
@@ -448,10 +448,12 @@ Things worth knowing:
 - The Android build stage is pinned to `linux/amd64`, because Google ships the
   SDK build-tools and the NDK host toolchain for x86-64 Linux only. On Apple
   silicon it runs under emulation — correct, but slow.
-- Each image build generates a fresh throwaway signing key, so two APKs from two
-  builds have different signatures. Android refuses to install one over the
-  other; uninstall first, or supply your own keystore (see
-  [Signing](#signing)).
+- Set `APK_KEYSTORE` and `APK_KEYSTORE_PASSWORD` and every build signs with
+  that key, so a new APK installs over the old one as an update (see
+  [Signing](#signing)). Without them each image build makes a fresh throwaway
+  key, two builds' APKs have different signatures, and Android refuses to
+  install one over the other until the first is uninstalled — which takes the
+  app's progress with it, unless it was synced.
 
 ## Deploy to Coolify
 
@@ -474,6 +476,11 @@ often a wrong one can be tried.
 
 Deploy. Coolify clones the repo, builds the APK and the WebAssembly bundle on
 the server, and serves the page on that domain.
+
+So that each new APK installs over the one already on a phone, also add the
+signing key: `APK_KEYSTORE` (the keystore base64-encoded, one line) and
+`APK_KEYSTORE_PASSWORD`. [Signing](#signing) says how to make them. Keep the
+keystore file itself somewhere safe outside Coolify too.
 
 To build for all three ABIs, add `APK_ABI=all` under **Environment Variables**.
 Coolify's separate *Build Variables* do not reach Compose builds, which is why
@@ -645,6 +652,53 @@ export CARGO_APK_RELEASE_KEYSTORE_PASSWORD=...
 ```
 
 `build-apk.sh` leaves an externally-set `CARGO_APK_RELEASE_KEYSTORE` alone.
+
+#### One key for every build, so updates install
+
+Android installs a new APK over an installed one only if both are signed with
+the same key; otherwise it refuses, and the old one has to be uninstalled
+first, taking its progress with it. The throwaway key above is made once per
+checkout — and once per *build* in Docker, which starts from a fresh checkout
+every time. To sign every build with the same key, make one keystore, once:
+
+```sh
+keytool -genkeypair -v -keystore wordtee-release.p12 -storetype PKCS12 \
+        -alias wordtee -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 wordtee-release.p12        # macOS: base64 -i wordtee-release.p12
+```
+
+and give it to the build as two variables:
+
+| Variable | Value |
+| --- | --- |
+| `APK_KEYSTORE` | The keystore base64-encoded on one line, as printed above — or, for a local build, a path to the file |
+| `APK_KEYSTORE_PASSWORD` | The password typed when creating it |
+
+```sh
+APK_KEYSTORE="$(base64 -w0 wordtee-release.p12)" APK_KEYSTORE_PASSWORD=… \
+    docker compose build
+```
+
+On Coolify, set both under Environment Variables. `build-apk.sh` decodes the key
+into a temporary file, checks that it opens with the password and holds exactly
+one key before compiling anything, prints the certificate's SHA-256 so two
+builds can be seen to share it, and deletes the file once the APK is signed.
+The variables live only in the APK build stage, never in the image that is
+served.
+
+Two things to know about the key:
+
+- **Back it up, and keep it.** Lose it and the installed copies can never be
+  updated again; every phone has to uninstall and reinstall. Phones that have
+  the app from before the key was set need that once too, since their copy
+  carries a throwaway signature.
+- The key's password must be the keystore's own. That is always so for a
+  PKCS12 keystore, which is what `keytool` makes by default; apksigner is given
+  the one password and no alias.
+
+The version code comes from `version` in `Cargo.toml`. An APK with the same
+version code still installs as an update; bump `version` when a release should
+show as newer.
 
 ### Changing app identity
 

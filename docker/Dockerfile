@@ -67,6 +67,16 @@ COPY assets/ ./assets/
 ARG WORDTEE_GOOGLE_DESKTOP_CLIENT_ID=
 ARG WORDTEE_GOOGLE_DESKTOP_CLIENT_SECRET=
 
+# The release signing key — the keystore file base64-encoded — and its
+# password. Android installs a new APK over an old one only when both carry
+# the same signature, so with these set every build can update the last;
+# left empty, each build signs with a fresh throwaway key. build-apk.sh
+# decodes the key into a temporary file and deletes it once the APK is
+# signed. Declared in this stage only, so they never reach the image that
+# ships.
+ARG APK_KEYSTORE=
+ARG APK_KEYSTORE_PASSWORD=
+
 # `--out /out` leaves a directory holding just the finished APK, with no
 # intermediate unaligned copy for the web server to serve by accident.
 RUN ./scripts/build-apk.sh --release --abi "${APK_ABI:-arm64}" --out /out \
