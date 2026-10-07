@@ -42,6 +42,9 @@ const STORAGE_KEY: &str = "wordtee.progress";
 /// Spec 1.4: how long the Undo offer stays on screen.
 const UNDO_SECONDS: f64 = 5.0;
 
+/// How long a message with nothing to undo stays on screen.
+const MESSAGE_SECONDS: f64 = 3.0;
+
 /// The five places you can be.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Tab {
@@ -340,7 +343,6 @@ impl WordTeeApp {
         if !self.focused() {
             self.show_tab_bar(ui, &mut goto);
         }
-        self.show_toast(ui, now);
 
         let mut ctx = Ctx {
             dict: &self.dict,
@@ -368,6 +370,9 @@ impl WordTeeApp {
                 Tab::Map => ui::map::show(ui, &mut ctx, &mut self.map),
                 Tab::Profile => ui::profile::show(ui, &mut ctx, &mut self.profile),
             });
+
+        // After the screens, so a message raised this frame shows at once.
+        self.show_toast(ui, now);
 
         if start_session {
             self.study
@@ -405,36 +410,48 @@ impl WordTeeApp {
         });
     }
 
-    /// The message strip, with the Undo button while it is still offered.
+    /// The message popup at the top of the screen, with an Undo while one is
+    /// offered.
     ///
-    /// Drawn inverted — dark on the light theme, light on the dark one — so
-    /// it reads as something passing over the screen rather than part of it.
+    /// It floats over the header rather than taking a strip of the layout,
+    /// so nothing on the screen moves when it comes and goes, and it sits
+    /// away from the buttons at the bottom that raised it. It counts nothing
+    /// down: the Undo is simply there for as long as the popup is.
     fn show_toast(&mut self, ui: &mut egui::Ui, now: f64) {
         let Some(toast) = &self.toast else { return };
         let age = now - toast.born;
-        if age > UNDO_SECONDS * 2.0 {
+        let lasts = if toast.undo.is_some() {
+            UNDO_SECONDS
+        } else {
+            MESSAGE_SECONDS
+        };
+        if age > lasts {
             self.toast = None;
             return;
         }
-        let undoable = toast.undo.is_some() && age <= UNDO_SECONDS;
+        let undoable = toast.undo.is_some();
         let message = toast.message.clone();
         let mut dismiss = false;
         let mut undo = false;
 
         let p = ui::palette(ui);
+        // Inverted, so it reads as passing over the screen: dark on the
+        // light theme, light on the dark one.
         let (fill, ink, action) = if ui.visuals().dark_mode {
             (p.ink, p.page, ui::theme::LIGHT.primary_ink)
         } else {
             (p.ink, p.page, ui::theme::DARK.primary_ink)
         };
-        egui::Panel::bottom("toast")
-            .frame(
-                egui::Frame::new()
-                    .fill(p.page)
-                    .inner_margin(egui::Margin::symmetric(12, 8)),
-            )
-            .show_separator_line(false)
-            .show(ui, |ui| {
+        // In quickly, out gently.
+        let opacity = ((age / 0.15).min((lasts - age) / 0.3)).clamp(0.0, 1.0) as f32;
+        let safe = ui.max_rect();
+        let width = safe.width() - 24.0;
+        egui::Area::new(egui::Id::new("toast"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(safe.left_top() + egui::vec2(12.0, 8.0))
+            .show(ui.ctx(), |ui| {
+                ui.multiply_opacity(opacity);
+                ui.set_width(width);
                 egui::Frame::new()
                     .fill(fill)
                     .corner_radius(14)
@@ -443,6 +460,12 @@ impl WordTeeApp {
                         right: 4,
                         top: 2,
                         bottom: 2,
+                    })
+                    .shadow(egui::Shadow {
+                        offset: [0, 4],
+                        blur: 16,
+                        spread: 0,
+                        color: egui::Color32::from_black_alpha(40),
                     })
                     .show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
@@ -467,8 +490,7 @@ impl WordTeeApp {
                                 );
                                 dismiss = response.on_hover_text("Dismiss").clicked();
                                 if undoable {
-                                    let left = (UNDO_SECONDS - age).ceil() as u32;
-                                    let label = RichText::new(format!("Undo ({left}s)"))
+                                    let label = RichText::new("Undo")
                                         .size(ui::theme::size::LABEL)
                                         .family(ui::theme::semibold())
                                         .color(action);
@@ -500,10 +522,9 @@ impl WordTeeApp {
             }
         } else if dismiss {
             self.toast = None;
-        } else if undoable {
-            // Keep the countdown ticking.
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(250));
+        } else {
+            // Keep the fades moving, and wake up to take it away.
+            ui.ctx().request_repaint_after_secs(0.05);
         }
     }
 }
@@ -1142,6 +1163,59 @@ mod tests {
             let clashes = h.id_clashes();
             assert!(clashes.is_empty(), "{tab:?}: {clashes:?}");
         }
+    }
+
+    #[test]
+    fn a_message_pops_up_at_the_top_without_a_countdown() {
+        let mut h = Harness::new();
+        h.on(Tab::Map);
+        let sense = h.item(1_250);
+        let undo = h
+            .app
+            .progress
+            .set_state(sense, State::Known, Source::Manual, h.app.day);
+        h.app.toast = Some(Toast {
+            message: "Marked as known.".to_owned(),
+            undo: Some(undo),
+            born: h.time,
+        });
+        h.settle();
+
+        let output = h.frame_output(vec![]);
+        let mut text = Vec::new();
+        fn walk(shape: &egui::Shape, out: &mut Vec<(String, Rect)>) {
+            match shape {
+                egui::Shape::Text(t) => out.push((
+                    t.galley.text().to_owned(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                )),
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+                _ => {}
+            }
+        }
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut text);
+        }
+        output.drop_without_applying_deltas();
+
+        let message = text
+            .iter()
+            .find(|(t, _)| t == "Marked as known.")
+            .expect("the message is drawn")
+            .1;
+        assert!(message.top() < SCREEN.y / 4.0, "drawn at {message:?}");
+        assert!(text.iter().any(|(t, _)| t == "Undo"));
+        assert!(
+            !text.iter().any(|(t, _)| t.starts_with("Undo (")),
+            "the Undo counts down"
+        );
+
+        // Gone once its time is up.
+        if let Some(toast) = &mut h.app.toast {
+            toast.born -= UNDO_SECONDS + 0.1;
+        }
+        h.settle();
+        assert!(h.app.toast.is_none());
     }
 
     #[test]

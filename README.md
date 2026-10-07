@@ -147,8 +147,11 @@ range, and a square per learning item — a hundred at a time, teal for known,
 hatched teal for probably known, purple for learning, a pale wash for unmet. On
 a phone the squares go ten to a row, about 32 points each, so each one is a
 target a thumb can hit. Tapping a square moves the sheet under the grid to that
-word; **I know it** and **Learn it** act on it without leaving the screen. It
-opens at the range holding your frontier rather than at rank 1.
+word; **I know it** and **Learn it** act on it without leaving the screen,
+and a second later the sheet moves on to the next word, so a range can be gone
+through one tap at a time. The confirmation pops up at the top of the screen,
+away from the buttons, with an Undo for as long as it shows. The map opens at
+the range holding your frontier rather than at rank 1.
 
 Behind the **Blocks** toggle is the overview spec 2.3 actually specifies: 25
 blocks of 1,000, each with the four-colour bar, inferred progress hatched so it

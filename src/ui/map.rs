@@ -25,6 +25,9 @@ const RANGE: u32 = 100;
 const NARROW_COLUMNS: u32 = 10;
 const WIDE_COLUMNS: u32 = 20;
 const WIDE_FROM: f32 = 560.0;
+/// How long the word stays in the sheet after "I know it" or "Learn it",
+/// so its new state can be seen, before the sheet moves on to the next.
+const ADVANCE_SECONDS: f64 = 1.0;
 
 #[derive(Default, PartialEq, Eq, Clone, Copy, Debug)]
 enum View {
@@ -43,6 +46,8 @@ pub struct MapState {
     /// Cached block tallies for the overview, and the revision they are for.
     tallies: Vec<[u32; 6]>,
     stamp: Option<u64>,
+    /// When the sheet moves on to the next word, after a decision.
+    advance_at: Option<f64>,
 }
 
 impl MapState {
@@ -60,7 +65,35 @@ impl MapState {
 
     /// Opens one of spec 2.3's blocks, as tapping it in the overview does.
     pub fn open_block(&mut self, block: u32) {
+        self.advance_at = None;
         self.show_rank(block.min(BLOCKS - 1) * BLOCK + 1);
+    }
+
+    /// Points at `rank` because the user chose it, which drops any move to
+    /// the next word still waiting.
+    fn pick(&mut self, rank: u32) {
+        self.advance_at = None;
+        self.show_rank(rank);
+    }
+
+    /// A decision was just made on the selected word: move on shortly.
+    fn decided(&mut self, now: f64) {
+        self.advance_at = Some(now + ADVANCE_SECONDS);
+    }
+
+    /// Moves to the next word once the pause after a decision is over —
+    /// into the next hundred when the range runs out. Returns how long is
+    /// left while it is still waiting.
+    fn tick(&mut self, now: f64, last: u32) -> Option<f64> {
+        let at = self.advance_at?;
+        if now < at {
+            return Some(at - now);
+        }
+        self.advance_at = None;
+        if self.selected < last {
+            self.show_rank(self.selected + 1);
+        }
+        None
     }
 
     fn refresh(&mut self, ctx: &Ctx) {
@@ -84,6 +117,9 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
     if state.start == 0 {
         state.show_rank(ctx.progress.frontier.max(1));
     }
+    if let Some(left) = state.tick(ctx.now, ctx.dict.learn_count()) {
+        ui.ctx().request_repaint_after_secs(left as f32);
+    }
 
     let mut view = state.view;
     ui::screen_header(ui, "Knowledge map", |ui| {
@@ -105,8 +141,10 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
 // -------------------------------------------------------------------------
 
 fn grid_view(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
-    if let Some(sense) = ctx.dict.at_rank(state.selected) {
-        selected_sheet(ui, ctx, sense);
+    if let Some(sense) = ctx.dict.at_rank(state.selected)
+        && selected_sheet(ui, ctx, sense)
+    {
+        state.decided(ctx.now);
     }
 
     let last = ctx.dict.learn_count();
@@ -124,7 +162,8 @@ fn grid_view(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
 }
 
 /// The word the grid is pointed at, in a sheet above the two actions.
-fn selected_sheet(ui: &mut egui::Ui, ctx: &mut Ctx, sense: crate::dict::Sense) {
+/// Returns whether one of them was tapped.
+fn selected_sheet(ui: &mut egui::Ui, ctx: &mut Ctx, sense: crate::dict::Sense) -> bool {
     let word = ctx.dict.word(sense.word);
     let voice = ctx.progress.accent;
     let headword = ctx.progress.casing.apply(word.text);
@@ -178,6 +217,7 @@ fn selected_sheet(ui: &mut egui::Ui, ctx: &mut Ctx, sense: crate::dict::Sense) {
     if open {
         *ctx.open_word = Some(sense.word);
     }
+    knew || learn
 }
 
 /// "‹  #1,201 – 1,300 ▾  ›".
@@ -198,7 +238,7 @@ fn range_picker(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
             })
             .inner;
         if previous.clicked() {
-            state.show_rank(state.start - RANGE);
+            state.pick(state.start - RANGE);
         }
 
         let label = format!(
@@ -226,7 +266,7 @@ fn range_picker(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
                         response.scroll_to_me(Some(egui::Align::Center));
                     }
                     if response.clicked() {
-                        state.show_rank(first);
+                        state.pick(first);
                     }
                 }
             });
@@ -237,7 +277,7 @@ fn range_picker(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
             })
             .inner;
         if next.clicked() {
-            state.show_rank(state.start + RANGE);
+            state.pick(state.start + RANGE);
         }
     });
 }
@@ -305,6 +345,7 @@ fn squares(ui: &mut egui::Ui, ctx: &mut Ctx, state: &mut MapState) {
         }
     }
     if let Some(rank) = picked {
+        state.advance_at = None;
         state.selected = rank;
     }
 }
@@ -430,6 +471,46 @@ mod tests {
         assert_eq!(state.start, 24_001);
         state.open_block(99);
         assert_eq!(state.start, 24_001, "clamped to the last block");
+    }
+
+    #[test]
+    fn a_decision_moves_on_to_the_next_word_after_a_second() {
+        let mut state = MapState::default();
+        state.show_rank(1_250);
+        state.decided(10.0);
+        // Still showing the word, so its new state can be seen.
+        assert!(state.tick(10.5, 25_000).is_some());
+        assert_eq!(state.selected, 1_250);
+        // Then the next one.
+        assert_eq!(state.tick(11.0, 25_000), None);
+        assert_eq!(state.selected, 1_251);
+        // Once only.
+        assert_eq!(state.tick(12.0, 25_000), None);
+        assert_eq!(state.selected, 1_251);
+    }
+
+    #[test]
+    fn the_last_word_of_a_range_moves_on_into_the_next_range() {
+        let mut state = MapState::default();
+        state.show_rank(1_300);
+        state.decided(0.0);
+        state.tick(1.0, 25_000);
+        assert_eq!((state.selected, state.start), (1_301, 1_301));
+        // And the very last word has nowhere to go.
+        state.show_rank(25_000);
+        state.decided(0.0);
+        state.tick(1.0, 25_000);
+        assert_eq!(state.selected, 25_000);
+    }
+
+    #[test]
+    fn choosing_another_word_cancels_the_move() {
+        let mut state = MapState::default();
+        state.show_rank(1_250);
+        state.decided(0.0);
+        state.pick(1_210);
+        state.tick(5.0, 25_000);
+        assert_eq!(state.selected, 1_210);
     }
 
     #[test]
